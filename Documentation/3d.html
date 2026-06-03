@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <link rel="shortcut icon" type="image/x-icon" href="ico/favicon.ico" />
+
+    <title>3D - PuzzleScript Next Documentation</title>
+
+    <!-- Bootstrap core CSS -->
+    <link href="css/bootstrap.css" rel="stylesheet">
+
+    <!-- Custom styles for this template -->
+    <link href="css/bootstrap-theme.css" rel="stylesheet">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+      <script src="../../assets/js/html5shiv.js"></script>
+      <script src="../../assets/js/respond.min.js"></script>
+    <![endif]-->
+  </head>
+
+  <body>
+
+    <div class="navbar navbar-inverse navbar-fixed-top">
+      <div class="container">
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a class="navbar-brand" href="../index.html"><img src="../images/mascot_colorful.png">Puzzlescript Next</a>
+        </div>
+        <div class="collapse navbar-collapse">
+          <ul class="nav navbar-nav">
+              <li><a href="../editor.html">Make A Game</a></li>
+              
+              <li class="active"><a href="documentation.html">Documentation</a></li>
+          </ul>          
+          <ul class="nav navbar-nav navbar-right">
+            <li><a href="https://discord.gg/3uumegUV7y">Discord</a></li>            
+            <li><a href="https://groups.google.com/g/puzzlescript">Forum</a></li>
+            <li><a href="https://github.com/david-pfx/PuzzleScriptNext">GitHub</a></li>
+            <li><a href="about.html">About</a></li>
+          </ul>
+        </div><!--/.nav-collapse -->
+      </div>
+    </div>
+
+    <div class="container">
+
+<p>
+<ol class="breadcrumb">
+  <li><a href="documentation.html">Documentation</a></li>
+  <li class="active">3D</li>
+</ol>
+<p>
+
+<h1>3D</h1>
+
+<p>3D mode extends ordinary PuzzleScript with one extra spatial axis.
+Rules, objects, legends, collision layers, win conditions, commands, tags, mappings, and level flow keep their normal PuzzleScript meanings.
+The new pieces are the <b>three_dimensions</b> prelude flag, 3D directions, 3D level slices, 3D sprites, and camera metadata.</p>
+
+<h2>Starting a 3D Game</h2>
+
+<p>Add <b>three_dimensions</b> in the prelude.  This enables the 3D parser, compiler, runtime, and renderer path.</p>
+
+<pre><code>title Tiny 3D Sokoban
+three_dimensions
+camera_angle 0 60
+camera_zoom 1
+
+========
+OBJECTS
+========
+
+background b
+black
+00000
+00000
+00000
+00000
+00000
+
+player p
+yellow
+.000.
+00000
+00000
+00000
+.000.
+
+crate c
+orange
+00000
+0...0
+0...0
+0...0
+00000
+
+wall x
+gray
+00000
+00000
+00000
+00000
+00000
+
+goal g
+green
+.000.
+00000
+00000
+00000
+.000.
+
+================
+COLLISIONLAYERS
+================
+
+background
+goal
+player, wall, crate
+
+======
+LEGEND
+======
+
+. = background
+p = player
+c = crate
+x = wall
+g = goal
+
+======
+RULES
+======
+
+[ > player | crate ] -> [ > player | > crate ]
+
+==============
+WINCONDITIONS
+==============
+
+all crate on goal
+
+======
+LEVELS
+======
+
+xxxxx
+x...x
+xpcgx
+x...x
+xxxxx</code></pre>
+
+<p>A flat level like this is still valid in 3D mode.  It is a single slice.</p>
+
+<h2>Directions</h2>
+
+<p>3D mode keeps the 2D directions <b>up</b>, <b>down</b>, <b>left</b>, <b>right</b>, and <b>action</b>, then adds <b>front</b> and <b>back</b>.
+The 2D movement bits keep their original order; <b>front</b> and <b>back</b> are appended as the extra spatial directions.</p>
+
+<pre><code>front [ player | no wall ] -> [ | player ]
+back  [ player | no wall ] -> [ | player ]</code></pre>
+
+<p>The 3D shorthand <b>horizontal</b> means <b>left</b>, <b>right</b>, <b>front</b>, and <b>back</b>.
+The shorthand <b>orthogonal</b> means all six spatial directions.</p>
+
+<h2>Relative Directions</h2>
+
+<p>Relative rule markers still work, but 3D has two more relative markers.
+The standard frame is:</p>
+
+<ul>
+  <li><b>&gt;</b> means right.</li>
+  <li><b>&lt;</b> means left.</li>
+  <li><b>^</b> means front.</li>
+  <li><b>v</b> means back.</li>
+  <li><b>o</b> means up.</li>
+  <li><b>x</b> means down.</li>
+</ul>
+
+<pre><code>[ &gt; player | crate ] -> [ &gt; player | &gt; crate ]
+[ o player | crate ] -> [ o player | o crate ]</code></pre>
+
+<p>As in 2D, the compiler expands relative rules into concrete directions.
+In 3D, that expansion uses 3D oriented rule frames rather than 2D rotations.</p>
+
+<h2>3D Levels</h2>
+
+<p>Ordinary <b>LEVELS</b> is still the section name.
+When <b>three_dimensions</b> is enabled, a semicolon line separates vertical slices inside a level.
+Every slice in a level must have the same width and height.</p>
+
+<pre><code>======
+LEVELS
+======
+
+xxxxx
+x...x
+xpc.x
+x...x
+xxxxx
+;
+bbbbb
+bbgbb
+bbbbb
+bbbbb
+bbbbb</code></pre>
+
+<p>Each slice is written as the familiar 2D grid.  The first slice is one height layer, the next slice is the next height layer, and so on.
+Use the same legend characters you would use in a 2D level.</p>
+
+<h2>3D Sprites</h2>
+
+<p>Objects can use a 3D sprite by writing several ordinary sprite slices separated by semicolon lines.
+Each slice uses the same color index rules as a 2D sprite: digits select colors and <b>.</b> is transparent.</p>
+
+<pre><code>crate c
+orange
+00000
+0...0
+0...0
+0...0
+00000
+;
+0...0
+.....
+.....
+.....
+0...0
+;
+00000
+0...0
+0...0
+0...0
+00000</code></pre>
+
+<p>If an object only has a normal 2D sprite, the renderer uses that as its visible sprite data.
+Use 3D sprite slices when the shape itself needs depth.</p>
+
+<h2>Camera Metadata</h2>
+
+<p>3D camera settings are prelude metadata.</p>
+
+<pre><code>perspective_camera
+camera_angle 35 60
+camera_zoom 1.25
+camera_view_angle 40</code></pre>
+
+<p><b>camera_angle</b> takes yaw and pitch in degrees.  <b>camera_zoom</b> changes framing.
+<b>camera_view_angle</b> controls the perspective camera view angle in degrees.
+Use <b>orthographic_camera</b> if you do not want perspective size distortion.</p>
+
+<h2>Example</h2>
+
+<p>The editor includes <b>Microban 3D</b> as a complete example of 3D levels, 3D sprites, camera metadata, and ordinary PuzzleScript rules running in 3D.</p>
+
+    </div><!-- /.container -->
+
+
+    <!-- Bootstrap core JavaScript
+    ================================================== -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="js/jquery.js"></script>
+    <script src="js/bootstrap.min.js"></script>
+  </body>
+</html>
