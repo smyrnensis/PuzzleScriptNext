@@ -67,11 +67,13 @@ The new pieces are the <b>three_dimensions</b> prelude flag, 3D directions, 3D l
 
 <h2>Starting a 3D Game</h2>
 
-<p>Add <b>three_dimensions</b> in the prelude.  This enables the 3D parser, compiler, runtime, and renderer path.</p>
+<p>Add <b>three_dimensions</b> in the prelude.  This enables the 3D parser, compiler, runtime, and renderer path.
+A first 3D example should show a real 3D asset and a real 3D level, so this starter uses 5-by-5-by-5 sprites and five level slices.</p>
 
 <pre><code>title Tiny 3D Sokoban
 three_dimensions
-camera_angle 0 60
+orthographic_camera
+camera_angle 35 60
 camera_zoom 1
 
 ========
@@ -80,22 +82,70 @@ OBJECTS
 
 background b
 black
-00000
-00000
-00000
-00000
-00000
+.....
+.....
+.....
+.....
+.....
 
 player p
 yellow
+.....
+..0..
+.000.
+..0..
+.....
+;
+..0..
+.000.
+00000
+.000.
+..0..
+;
 .000.
 00000
 00000
 00000
 .000.
+;
+..0..
+.000.
+00000
+.000.
+..0..
+;
+.....
+..0..
+.000.
+..0..
+.....
 
 crate c
 orange
+00000
+0...0
+0...0
+0...0
+00000
+;
+0...0
+.....
+.....
+.....
+0...0
+;
+0...0
+.....
+.....
+.....
+0...0
+;
+0...0
+.....
+.....
+.....
+0...0
+;
 00000
 0...0
 0...0
@@ -109,14 +159,62 @@ gray
 00000
 00000
 00000
+;
+00000
+00000
+00000
+00000
+00000
+;
+00000
+00000
+00000
+00000
+00000
+;
+00000
+00000
+00000
+00000
+00000
+;
+00000
+00000
+00000
+00000
+00000
 
 goal g
 green
+.....
+..0..
 .000.
-00000
-00000
-00000
+..0..
+.....
+;
+..0..
+.0.0.
+0...0
+.0.0.
+..0..
+;
 .000.
+0...0
+0...0
+0...0
+.000.
+;
+..0..
+.0.0.
+0...0
+.0.0.
+..0..
+;
+.....
+..0..
+.000.
+..0..
+.....
 
 ================
 COLLISIONLAYERS
@@ -154,11 +252,36 @@ LEVELS
 
 xxxxx
 x...x
+x...x
+x...x
+xxxxx
+;
+xxxxx
+x...x
+x...x
+x...x
+xxxxx
+;
+xxxxx
+x...x
 xpcgx
+x...x
+xxxxx
+;
+xxxxx
+x...x
+x...x
+x...x
+xxxxx
+;
+xxxxx
+x...x
+x...x
 x...x
 xxxxx</code></pre>
 
-<p>A flat level like this is still valid in 3D mode.  It is a single slice.</p>
+<p>The object sprites above are written as five 5-by-5 slices separated by semicolon lines.
+The level is written the same way: each slice is a familiar 2D grid, and the semicolon lines stack those grids into a 3D board.</p>
 
 <h2>Directions</h2>
 
@@ -195,7 +318,8 @@ In 3D, that expansion uses 3D oriented rule frames rather than 2D rotations.</p>
 
 <p>Ordinary <b>LEVELS</b> is still the section name.
 When <b>three_dimensions</b> is enabled, a semicolon line separates vertical slices inside a level.
-Every slice in a level must have the same width and height.</p>
+Every slice in a level must have the same width and height.
+For a 5-by-5-by-5 board, write five 5-by-5 grids:</p>
 
 <pre><code>======
 LEVELS
@@ -203,23 +327,42 @@ LEVELS
 
 xxxxx
 x...x
-xpc.x
+x...x
 x...x
 xxxxx
 ;
-bbbbb
-bbgbb
-bbbbb
-bbbbb
-bbbbb</code></pre>
+xxxxx
+x...x
+x...x
+x...x
+xxxxx
+;
+xxxxx
+x.p.x
+x.cgx
+x...x
+xxxxx
+;
+xxxxx
+x...x
+x...x
+x...x
+xxxxx
+;
+xxxxx
+x...x
+x...x
+x...x
+xxxxx</code></pre>
 
 <p>Each slice is written as the familiar 2D grid.  The first slice is one height layer, the next slice is the next height layer, and so on.
 Use the same legend characters you would use in a 2D level.</p>
 
 <h2>3D Sprites</h2>
 
-<p>Objects can use a 3D sprite by writing several ordinary sprite slices separated by semicolon lines.
-Each slice uses the same color index rules as a 2D sprite: digits select colors and <b>.</b> is transparent.</p>
+<p>Objects use 3D sprite data by writing several ordinary 5-by-5 sprite slices separated by semicolon lines.
+Each slice uses the same color index rules as a 2D sprite: digits select colors and <b>.</b> is transparent.
+Five slices make a 5-by-5-by-5 sprite.</p>
 
 <pre><code>crate c
 orange
