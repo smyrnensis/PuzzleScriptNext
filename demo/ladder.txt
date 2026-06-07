@@ -235,7 +235,7 @@ RULES
 
 up [ action Player Ladder | no Wall ] -> [ Ladder | Player ]
 
-late down once [ Player no Ladder | no Floor no Wall ] -> [ Background | Player ] again
+late down once [ Player no Ladder | no Floor no Wall ] -> [ | Player ] again
 
 ==============
 WINCONDITIONS
