@@ -199,7 +199,6 @@
 
     function buildRenderObjects3D(state) {
         const count = state.objectCount || (state.idDict ? state.idDict.length : 0);
-        const presentation = classifyLayerPresentation3D(state);
         const objects = [];
         for (let id = 0; id < count; id++) {
             const name = state.idDict && state.idDict[id];
@@ -211,50 +210,27 @@
                 id,
                 name,
                 layer,
-                visual: buildObjectVisual3D(state, object, presentationForLayer(presentation, layer, name), name)
+                visual: buildObjectVisual3D(state, object, name)
             };
         }
         return objects;
     }
 
-    function presentationForLayer(presentation, layer, name) {
-        const value = presentation[layer];
-        if (value === "floor" || value === "solid")
-            return value;
-        throw new Error(`3D render frame cannot infer visual presentation for object "${name}" on layer ${layer}.`);
-    }
-
-    function classifyLayerPresentation3D(state) {
-        const layers = state && state.collisionLayers || [];
-        const backgroundLayer = Number.isInteger(state && state.backgroundlayer)
-            ? state.backgroundlayer
-            : 0;
-        const result = [];
-        for (let layer = 0; layer < layers.length; layer++) {
-            if (layer === backgroundLayer)
-                result[layer] = "floor";
-            else
-                result[layer] = "solid";
-        }
-        return result;
-    }
-
-    function buildObjectVisual3D(state, object, presentation, name) {
+    function buildObjectVisual3D(state, object, name) {
         const colors = normalizeColors(state, object.colors || []);
         if (object.sprite3matrix)
-            return buildSprite3MatrixVisual3D(state, object, colors, presentation);
+            return buildSprite3MatrixVisual3D(state, object, colors);
         if (object.spritematrix && object.spritematrix.length > 0)
-            return buildSpriteMatrixVisual3D(state, object, colors, presentation);
+            return buildSpriteMatrixVisual3D(state, object, colors);
 
         throw new Error(`3D render frame requires object-owned sprite matrix data for "${name || "unnamed object"}".`);
     }
 
-    function buildSpriteMatrixVisual3D(state, object, colors, presentation) {
+    function buildSpriteMatrixVisual3D(state, object, colors) {
         const matrix = object.spritematrix || [];
         const cells = spriteMatrixCells(matrix, colors);
         return {
             kind: "spritematrix",
-            presentation,
             color: cells.length > 0 ? cells[0].color : firstVisibleColor(colors),
             colors,
             matrix,
@@ -266,12 +242,11 @@
         };
     }
 
-    function buildSprite3MatrixVisual3D(state, object, colors, presentation) {
+    function buildSprite3MatrixVisual3D(state, object, colors) {
         const matrix = object.sprite3matrix || [];
         const cells = sprite3MatrixCells(matrix, colors);
         return {
             kind: "sprite3matrix",
-            presentation,
             color: cells.length > 0 ? cells[0].color : firstVisibleColor(colors),
             colors,
             matrix,
@@ -291,7 +266,7 @@
                 const value = cols[col];
                 if (value < 0 || value === "." || value === " ")
                     continue;
-                const color = presentationColorFromSpriteValue(value, colors);
+                const color = spriteColorFromValue(value, colors);
                 if (color.visible)
                     cells.push(spriteCell({ col, row, slice: 0 }, color));
             }
@@ -309,7 +284,7 @@
                     const value = slices[slice];
                     if (value < 0 || value === "." || value === " ")
                         continue;
-                    const color = presentationColorFromSpriteValue(value, colors);
+                    const color = spriteColorFromValue(value, colors);
                     if (color.visible)
                         cells.push(spriteCell({ col, row, slice }, color));
                 }
@@ -325,8 +300,8 @@
         return cell;
     }
 
-    function presentationColorFromSpriteValue(value, colors) {
-        return normalizePresentationColor(colorFromSpriteValue(value, colors));
+    function spriteColorFromValue(value, colors) {
+        return normalizeSpriteColor(colorFromSpriteValue(value, colors));
     }
 
     function colorFromSpriteValue(value, colors) {
@@ -337,7 +312,7 @@
         return value || "#ff00ff";
     }
 
-    function normalizePresentationColor(color) {
+    function normalizeSpriteColor(color) {
         if (!color)
             return { color: "#ff00ff", alpha: 1, visible: true };
         if (typeof color === "string" && color.toLowerCase() === "transparent")
@@ -429,9 +404,9 @@
 
     function firstVisibleColor(colors) {
         for (const color of colors || []) {
-            const presentation = normalizePresentationColor(color);
-            if (presentation.visible)
-                return presentation.color;
+            const spriteColor = normalizeSpriteColor(color);
+            if (spriteColor.visible)
+                return spriteColor.color;
         }
         return "transparent";
     }
