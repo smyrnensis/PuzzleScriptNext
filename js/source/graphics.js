@@ -227,135 +227,15 @@ function createObjectSprites() {
     for (const n in state.objects) {
         if (state.objects.hasOwnProperty(n)) {
             const object = state.objects[n];
-            const colors = object.colors.map(c => colorToHex(state.metadata.color_palette, c)); // in case we twiddled colours
-            const topDownSprite = object.sprite3matrix ? sprite3MatrixTopDownSprite(object.sprite3matrix, colors) : null;
 			objectSprites[object.id] = {
-                dat: topDownSprite ? topDownSprite.dat : object.spritematrix,
-                colors: topDownSprite ? topDownSprite.colors : colors,
+                dat: object.spritematrix,
+                colors: object.colors.map(c => colorToHex(state.metadata.color_palette, c)), // in case we twiddled colours
 				text: object.spritetext,
                 vector: object.vector,
 				scale: object.scale,
             };
         }
     }
-}
-
-function sprite3MatrixTopDownSprite(matrix, colors) {
-    const rows = matrix || [];
-    let width = 0;
-    let sliceCount = 0;
-    for (let row = 0; row < rows.length; row++) {
-        const cols = rows[row] || [];
-        width = Math.max(width, cols.length);
-        for (let col = 0; col < cols.length; col++)
-            sliceCount = Math.max(sliceCount, (cols[col] || []).length);
-    }
-
-    const projectedColors = (colors || []).slice();
-    const projectedColorIndexes = {};
-    for (let i = 0; i < projectedColors.length; i++)
-        projectedColorIndexes[projectedColors[i]] = i;
-    const projected = [];
-    for (let row = 0; row < rows.length; row++) {
-        projected[row] = [];
-        for (let col = 0; col < width; col++)
-            projected[row][col] = -1;
-    }
-
-    for (let row = 0; row < rows.length; row++) {
-        for (let col = 0; col < width; col++) {
-            const color = sprite3MatrixTopDownColor(rows, row, col, sliceCount, colors || []);
-            if (!color)
-                continue;
-            if (projectedColorIndexes[color] === undefined) {
-                projectedColorIndexes[color] = projectedColors.length;
-                projectedColors.push(color);
-            }
-            projected[row][col] = projectedColorIndexes[color];
-        }
-    }
-    return { dat: projected, colors: projectedColors };
-}
-
-function sprite3MatrixTopDownMatrix(matrix, colors) {
-    return sprite3MatrixTopDownSprite(matrix, colors || []).dat;
-}
-
-function sprite3MatrixTopDownColor(rows, row, col, sliceCount, colors) {
-    const output = { r: 0, g: 0, b: 0, a: 0 };
-    const slices = rows[row] && rows[row][col] || [];
-    for (let slice = 0; slice < sliceCount; slice++) {
-        const value = slices[slice];
-        if (value < 0 || value === "." || value === " " || value === undefined)
-            continue;
-        const color = sprite3PaletteColor(value, colors);
-        if (!color || color.a <= 0)
-            continue;
-        const remaining = 1 - output.a;
-        output.r += color.r * color.a * remaining;
-        output.g += color.g * color.a * remaining;
-        output.b += color.b * color.a * remaining;
-        output.a += color.a * remaining;
-        if (output.a >= 0.999)
-            break;
-    }
-    if (output.a <= 0)
-        return null;
-    return rgbaToHexColor({
-        r: output.r / output.a,
-        g: output.g / output.a,
-        b: output.b / output.a,
-        a: output.a
-    });
-}
-
-function sprite3PaletteColor(value, colors) {
-    if (typeof value !== "number")
-        return parseSpriteColor(value);
-    return parseSpriteColor(colors[value]);
-}
-
-function parseSpriteColor(color) {
-    if (!color || String(color).toLowerCase() === "transparent")
-        return { r: 0, g: 0, b: 0, a: 0 };
-    const hex = String(color).trim();
-    const match = hex.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
-    if (!match)
-        return { r: 255, g: 0, b: 255, a: 1 };
-    const value = match[1];
-    if (value.length === 3 || value.length === 4) {
-        return {
-            r: parseInt(value[0] + value[0], 16),
-            g: parseInt(value[1] + value[1], 16),
-            b: parseInt(value[2] + value[2], 16),
-            a: value.length === 4 ? parseInt(value[3] + value[3], 16) / 255 : 1
-        };
-    }
-    return {
-        r: parseInt(value.slice(0, 2), 16),
-        g: parseInt(value.slice(2, 4), 16),
-        b: parseInt(value.slice(4, 6), 16),
-        a: value.length === 8 ? parseInt(value.slice(6, 8), 16) / 255 : 1
-    };
-}
-
-function rgbaToHexColor(color) {
-    const r = clampByte(color.r);
-    const g = clampByte(color.g);
-    const b = clampByte(color.b);
-    const a = Math.max(0, Math.min(1, color.a));
-    const rgb = [r, g, b].map(byteToHex).join("");
-    if (a >= 0.999)
-        return "#" + rgb;
-    return "#" + rgb + byteToHex(Math.round(a * 255));
-}
-
-function clampByte(value) {
-    return Math.max(0, Math.min(255, Math.round(value)));
-}
-
-function byteToHex(value) {
-    return value.toString(16).padStart(2, "0");
 }
 
 var glyphImagesCorrespondance;
@@ -559,30 +439,9 @@ function redraw() {
     }
     if (debugSwitch.includes('redraw')) console.log(`Redraw: ${JSON.stringify(perfCounters)}`);
 
-    if (textMode) {
-        const host = typeof Puzzle3DPlayHost !== "undefined" ? Puzzle3DPlayHost
-            : typeof window !== "undefined" ? window.Puzzle3DPlayHost
-            : typeof globalThis !== "undefined" ? globalThis.Puzzle3DPlayHost
-            : null;
-        if (host && typeof host.restore === "function")
-            host.restore();
+    if (textMode)
         redrawTextMode();
-    } else if (levelEditorOpened && typeof isCurrentLevelEditor3D === "function" && isCurrentLevelEditor3D()) {
-        if (typeof is3DLevelEditorActive === "function" && !is3DLevelEditorActive()
-            && typeof prepareLevelEditorForCurrentLevel === "function")
-            prepareLevelEditorForCurrentLevel();
-        if (typeof is3DLevelEditorActive === "function" && is3DLevelEditorActive())
-            redrawCellGrid(getLevelEditor3DViewLevel());
-        else
-            throw new Error("3D level editor requires an active 3D editor board.");
-    } else if (curLevel && curLevel.is3d) {
-        const host = typeof Puzzle3DPlayHost !== "undefined" ? Puzzle3DPlayHost
-            : typeof window !== "undefined" ? window.Puzzle3DPlayHost
-            : typeof globalThis !== "undefined" ? globalThis.Puzzle3DPlayHost
-            : null;
-        if (!host || typeof host.redraw !== "function" || !host.redraw(state))
-            throw new Error("3D level redraw requires Puzzle3DPlayHost.redraw().");
-    } else redrawCellGrid(curLevel);
+    else redrawCellGrid(curLevel);
 }
 
 // option to draw custom font text in cells could be a prelude setting if desired
@@ -656,8 +515,6 @@ function redrawCellGrid(curlevel) {
         editorRowCount = Math.ceil(glyphcount/(screenwidth-1));
         minMaxIJ[2] -= 2;
         minMaxIJ[3] -= 2 + editorRowCount;
-        if (typeof is3DLevelEditorActive === "function" && is3DLevelEditorActive())
-            minMaxIJ[3] -= getLevelEditorExtraTopRows();
     } else if (flickscreen) {
         var playerPositions = getPlayerPositions();
         if (playerPositions.length>0) {
@@ -1138,9 +995,6 @@ function setClip(tween) {
 }
 
 function drawEditorIcons(mini,minj) {
-    if (typeof is3DLevelEditorActive === "function" && is3DLevelEditorActive())
-        return drawEditorIcons3D(mini, minj);
-
 	var glyphCount = glyphImages.length;
 	var glyphStartIndex=0;
 	var glyphEndIndex = glyphImages.length;/*Math.min(
@@ -1225,96 +1079,6 @@ function drawEditorIcons(mini,minj) {
 
 }
 
-function drawEditorIcons3D(mini,minj) {
-    const extraRows = typeof getLevelEditorExtraTopRows === "function" ? getLevelEditorExtraTopRows() : 1;
-	var glyphCount = glyphImages.length;
-	var glyphStartIndex=0;
-	var glyphEndIndex = glyphImages.length;/*Math.min(
-							glyphStartIndex+10,
-							screenwidth-2,
-							glyphStartIndex+Math.max(glyphCount-glyphStartIndex,0)
-							);*/
-	var glyphsToDisplay = glyphEndIndex-glyphStartIndex;
-
-	ctx.drawImage(glyphPrintButton,xoffset-cellwidth,yoffset-cellheight*(1+editorRowCount+extraRows));
-	if (mouseCoordY===(-1-editorRowCount-extraRows)&&mouseCoordX===-1) {
-			ctx.drawImage(glyphMouseOver,xoffset-cellwidth,yoffset-cellheight*(1+editorRowCount+extraRows));
-	}
-
-	var ypos = editorRowCount-(-mouseCoordY-2-extraRows)-1;
-	var mouseIndex=mouseCoordX+(screenwidth-1)*ypos;
-
-	for (var i=0;i<glyphsToDisplay;i++) {
-		var glyphIndex = glyphStartIndex+i;
-		var sprite = glyphImages[glyphIndex];
-        var xpos=i%(screenwidth-1);
-        var ypos=(i/(screenwidth-1))|0;
-		ctx.drawImage(sprite,xoffset+(xpos)*cellwidth,yoffset+ypos*cellheight-cellheight*(1+editorRowCount+extraRows));
-		if (mouseCoordX>=0&&mouseCoordX<(screenwidth-1)&&mouseIndex===i) {
-			ctx.drawImage(glyphMouseOver,xoffset+xpos*cellwidth,yoffset+ypos*cellheight-cellheight*(1+editorRowCount+extraRows));
-		}
-		if (i===glyphSelectedIndex) {
-			ctx.drawImage(glyphHighlight,xoffset+xpos*cellwidth,yoffset+ypos*cellheight-cellheight*(1+editorRowCount+extraRows));
-		}
-	}
-
-    if (typeof drawLevelEditor3DSliceControls === "function")
-        drawLevelEditor3DSliceControls(ctx, xoffset, yoffset, cellwidth, cellheight);
-
-    //filched from https://raw.githubusercontent.com/ClementSparrow/Pattern-Script/master/src/js/graphics.js
-    var tooltip_string = ''
-    var tooltip_objects = null
-    // prepare tooltip: legend for highlighted editor icon
-    if ( (mouseCoordX >= 0) && (mouseCoordX < screenwidth) && (mouseIndex >= 0) && (mouseIndex < glyphsToDisplay) )
-    {
-        const glyphIndex = glyphStartIndex + mouseIndex
-        const identifier_index = glyphImagesCorrespondance[glyphIndex]
-        tooltip_string = identifier_index
-        if (identifier_index in state.synonymsDict){
-            tooltip_string += " = " + state.synonymsDict[identifier_index];
-        } else if (identifier_index in state.aggregatesDict){
-            tooltip_string += " = " + state.aggregatesDict[identifier_index].join(" and ");
-        }
-    }
-    // prepare tooltip: content of a level's cell
-    else if ( (mouseCoordX >= 0) && (mouseCoordY >= 0) && (mouseCoordX < screenwidth) && (mouseCoordY < screenheight-editorRowCount-extraRows-2) )
-    {
-        const editorLevel = getLevelEditor3DViewLevel();
-        const posMask = editorLevel.getCellInto((mouseCoordY+minj) + (mouseCoordX+mini)*editorLevel.height, _o12);
-        tooltip_objects = state.idDict.filter( (x,k) => (posMask.get(k) != 0) )
-            // prepare tooltip: object names
-        if (tooltip_objects !== null)
-        {
-            tooltip_string = tooltip_objects.join(', ')
-        }
-    }
-
-    // show tooltip
-    if (tooltip_string.length > 0)
-    {
-		ctx.fillStyle = state.fgcolor;
-		ctx.font = '16px sans-serif';
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillText(tooltip_string, xoffset + screenwidth * cellwidth/2, yoffset-0.5*cellheight);//, screenwidth * cellwidth);
-    }
-
-	if (mouseCoordX>=-1&&mouseCoordY>=-1&&mouseCoordX<screenwidth-1&&mouseCoordY<screenheight-1-editorRowCount-extraRows) {
-		if (mouseCoordX==-1||mouseCoordY==-1||mouseCoordX==screenwidth-2||mouseCoordY===screenheight-2-editorRowCount-extraRows) {
-			ctx.drawImage(glyphHighlightResize,
-				xoffset+mouseCoordX*cellwidth,
-				yoffset+mouseCoordY*cellheight
-				);
-		} else {
-			ctx.drawImage(glyphHighlight,
-				xoffset+mouseCoordX*cellwidth,
-				yoffset+mouseCoordY*cellheight
-				);
-		}
-	}
-
-}
-
 var lastDownTarget;
 
 var oldcellwidth=0;
@@ -1329,8 +1093,6 @@ let statusLineHeight = 0;
 
 // recalculate screen layout and then call redraw
 function canvasResize(level) {
-    if (typeof is3DLevelEditorActive === "function" && is3DLevelEditorActive())
-        level = getLevelEditor3DViewLevel();
     level ||= curLevel;
     canvas.width = canvas.parentNode.clientWidth;
     canvas.height = canvas.parentNode.clientHeight;
@@ -1350,8 +1112,6 @@ function canvasResize(level) {
         const glyphcount = glyphCount();
         editorRowCount = Math.ceil(glyphcount/(screenwidth-1));
         screenheight += 2 + editorRowCount;
-        if (typeof is3DLevelEditorActive === "function" && is3DLevelEditorActive())
-            screenheight += getLevelEditorExtraTopRows();
     } else if (flickscreen) {
         screenwidth=state.metadata.flickscreen[0];
         screenheight=state.metadata.flickscreen[1];
@@ -1395,8 +1155,6 @@ function canvasResize(level) {
     if (levelEditorOpened && !textMode) {
     	xoffset+=cellwidth;
     	yoffset+=cellheight*(1+editorRowCount);
-        if (typeof is3DLevelEditorActive === "function" && is3DLevelEditorActive())
-            yoffset+=cellheight*getLevelEditorExtraTopRows();
     }
 
     // tidy up for export to globals
@@ -1485,4 +1243,4 @@ EasingFunctions = {
       11: "easeInQuint",
       12: "easeOutQuint",
       13: "easeInOutQuint"
-  }
+  }  

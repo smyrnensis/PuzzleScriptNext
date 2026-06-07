@@ -99,7 +99,7 @@
             },
             tween: {
                 enabled: meta.tween_length !== undefined,
-                semantic: psSemantic("graphics.tween", false, "3d-render-adapter-not-connected"),
+                semantic: psSemantic("graphics.tween", true),
                 lengthMs: secondsToMs(meta.tween_length, 0),
                 easing: meta.tween_easing,
                 snap: meta.tween_snap

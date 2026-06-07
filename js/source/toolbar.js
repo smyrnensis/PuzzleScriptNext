@@ -194,29 +194,13 @@ repopulateSaveDropdown();
 var loadDropdown = document.getElementById('loadDropDown');
 loadDropdown.selectedIndex=0;
 
-function afterLevelEditorCompile(result) {
-	const finish = function() {
-		lastDownTarget=canvas;
-	};
-	if (result && typeof result.then === "function")
-		return result.then(finish);
-	finish();
-}
-
 function levelEditorClick_Fn() {
-	const levels = typeof getPlayableLevels === "function" ? getPlayableLevels(state) : state.levels;
-	if (textMode || levels.length===0) {
-		return afterLevelEditorCompile(compile(["loadLevelEditor",0]));
+	if (textMode || state.levels.length===0) {
+		compile(["loadLevel",0]);
+		levelEditorOpened=true;
+    	canvasResize();
 	} else {
-		if (levelEditorOpened) {
-			levelEditorOpened=false;
-		} else {
-			levelEditorOpened=true;
-			if (typeof prepareLevelEditorForCurrentLevel === "function" && prepareLevelEditorForCurrentLevel()) {
-				lastDownTarget=canvas;
-				return;
-			}
-		}
+		levelEditorOpened=!levelEditorOpened;
     	canvasResize();
     }
     lastDownTarget=canvas;	

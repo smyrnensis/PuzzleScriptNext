@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="description" content="A game made with PuzzleScript Next 3D Fork.">
-<title>PuzzleScript Next 3D Fork Game</title>
+<meta name="description" content="A game made with the PuzzleScriptNext game engine.">
+<title>PuzzleScript Next Game</title>
 <style>
 body {
 	background-color:black;
@@ -241,10 +241,10 @@ a {
 </div> 
 <div class="footer">
 <span id="errormessage" style="color:red;"></span>
-<a id="homepagelink" href="https://github.com/smyrnensis/PuzzleScriptNext">Made with PuzzleScript Next 3D Fork</a> <span id="separator">|</span> <a id="hacklink" href="#">hack</a>
+<a id="homepagelink" href="https://github.com/david-pfx/PuzzleScriptNext">Made with PuzzlescriptNext</a> <span id="separator">|</span> <a id="hacklink" href="#">hack</a>
 </div>
 
-<script src="js/scripts_play_compiled.js?v=3"></script>
+<script src="js/scripts_play_compiled.js"></script>
 
 
 
@@ -273,8 +273,6 @@ a {
 
 
 
-<script src="js/parser.js?v=3d-sprite-20260530"></script>
-<script src="js/levels3d.js?v=3d-axis-20260530"></script>
 
 
 
@@ -283,13 +281,18 @@ a {
 
 
 
-<script src="js/render_frame_contract3d.js?v=3d-render-contract-20260530"></script>
-<script src="js/render_frame3d.js?v=3d-color-to-hex-20260602"></script>
-<script src="js/three_renderer3d.js?v=3d-renderer-baseline-20260602"></script>
+
+
+
+
+
+
+
 <script>
 window.PUZZLE3D_THREE_MODULE_URL = new URL("js/vendor/three.module.min.js", document.baseURI).href;
-window.PUZZLE3D_THREE_GLOBAL_URL = new URL("js/vendor/three.global.min.js?v=3d-file-global-20260601", document.baseURI).href;
 </script>
+
+
 
 
 
@@ -387,16 +390,8 @@ function finishPrepareForPlay(hackArg, compiledState) {
     if (compiledState.metadata.homepage!==undefined) {
         var homepage=compiledState.metadata.homepage;
         var homepageLink = document.getElementById("homepagelink");
-        // refers to a specific simple game -- with an embedded exploit!
-        // if (id==="2fe3172d2b9fe684977d184f1b6226d5"){
-        //     // https://github.com/increpare/PuzzleScript/issues/829
-        //     // Supporting vulnerability on legacy grounds to enable Pushing It:
-        //     // https://www.puzzlescript.net/play.html?p=2fe3172d2b9fe684977d184f1b6226d5
-        //     homepageLink.innerHTML=strip_http(homepage);
-        // } else {
         //sanitize tags from title   
         homepageLink.textContent=strip_http(homepage);
-        // }
         
         if (!homepage.match(/^https?:\/\//)) {
             homepage = "https://" + homepage;
@@ -407,7 +402,7 @@ function finishPrepareForPlay(hackArg, compiledState) {
         var title=compiledState.metadata.title;
         var gametitle = document.getElementById("gametitle");
         gametitle.textContent=title;
-        window.document.title=title+" - PuzzleScript Next 3D Fork Game";
+        window.document.title=title+" - PuzzleScriptNext Game";
     }
             
     var hacklink = document.getElementById("hacklink");

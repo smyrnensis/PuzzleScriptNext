@@ -692,7 +692,8 @@
     }
 
     function cellIsInVisibleRegion(frame, cell) {
-        const region = frame && frame.view && frame.view.visibleRegion;
+        const view = frame && frame.view || {};
+        const region = view.renderRegion;
         if (!region)
             return true;
         return cell.x >= region.x
@@ -702,6 +703,13 @@
     }
 
     function renderCenter(frame) {
+        const cameraCenter = frame && frame.view && frame.view.cameraCenter;
+        if (cameraCenter) {
+            return {
+                x: cameraCenter.x,
+                z: cameraCenter.z
+            };
+        }
         const region = frame && frame.view && frame.view.visibleRegion;
         if (region) {
             return {
@@ -719,6 +727,8 @@
         const tween = frame.effects && frame.effects.tween || {};
         if (!tween.enabled || !tween.lengthMs)
             return null;
+        if (!tweenSemantics)
+            throw new Error("3D renderer requires PuzzleScriptTweenSemantics for tween rendering.");
         const elapsedMs = Number.isFinite(options.tweenElapsedMs)
             ? options.tweenElapsedMs
             : Number.isFinite(root.tweentimer)

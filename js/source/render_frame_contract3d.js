@@ -26,7 +26,9 @@
         "shade",
         "visibility",
         "slice",
-        "visibleRegion"
+        "cameraCenter",
+        "visibleRegion",
+        "renderRegion"
     ];
 
     function validateRenderFrame3D(frame) {
@@ -54,6 +56,7 @@
         assertPositiveInteger(size.height, "size.height");
         assertPositiveInteger(size.depth, "size.depth");
         assertNonNegativeInteger(size.layerCount, "size.layerCount");
+        assertNonNegativeInteger(size.renderCellCount, "size.renderCellCount");
     }
 
     function validateSpriteGrid(spriteGrid) {
@@ -99,35 +102,36 @@
             }
         }
 
-        const cellCount = size.width * size.height * size.depth;
-        if (drawPlan.cellOrder.length !== cellCount)
-            throw new Error("3D render frame contract violation: drawPlan.cellOrder must cover every cell.");
         const seen = new Set();
         for (const cellIndex of drawPlan.cellOrder) {
             assertNonNegativeInteger(cellIndex, "drawPlan.cellOrder entry");
-            if (cellIndex >= cellCount)
+            if (cellIndex >= size.renderCellCount)
                 throw new Error("3D render frame contract violation: drawPlan.cellOrder entry is outside cells.");
             if (seen.has(cellIndex))
                 throw new Error("3D render frame contract violation: drawPlan.cellOrder must not contain duplicates.");
             seen.add(cellIndex);
         }
+        if (seen.size !== size.renderCellCount)
+            throw new Error("3D render frame contract violation: drawPlan.cellOrder must cover every render cell.");
     }
 
     function validateCells(cells, size, objects) {
         if (!Array.isArray(cells))
             throw new Error("3D render frame contract violation: cells must be an array.");
-        const expected = size.width * size.height * size.depth;
-        if (cells.length !== expected)
-            throw new Error("3D render frame contract violation: cells length must equal width * height * depth.");
+        if (cells.length !== size.renderCellCount)
+            throw new Error("3D render frame contract violation: cells length must equal size.renderCellCount.");
 
         for (let index = 0; index < cells.length; index++) {
             const cell = cells[index];
             assertObject(cell, `3D render frame cell ${index}`);
-            if (cell.index !== index)
-                throw new Error("3D render frame contract violation: cell.index must match its array index.");
+            assertNonNegativeInteger(cell.index, "cell.index");
+            if (cell.index >= size.width * size.height * size.depth)
+                throw new Error("3D render frame contract violation: cell.index must be inside the board.");
             assertNonNegativeInteger(cell.x, "cell.x");
             assertNonNegativeInteger(cell.y, "cell.y");
             assertNonNegativeInteger(cell.z, "cell.z");
+            if (cell.x >= size.width || cell.y >= size.height || cell.z >= size.depth)
+                throw new Error("3D render frame contract violation: cell coordinates must be inside the board.");
             if (!Array.isArray(cell.objectIds))
                 throw new Error("3D render frame contract violation: cell.objectIds must be an array.");
             for (const objectId of cell.objectIds) {
@@ -195,7 +199,9 @@
             throw new Error("3D render frame contract violation: view.slice must be null when visibility is all.");
         if (view.visibility === "slice")
             validateSlice(view.slice);
+        validateCameraCenter(view.cameraCenter);
         validateVisibleRegion(view.visibleRegion);
+        validateVisibleRegion(view.renderRegion);
     }
 
     function validateSlice(slice) {
@@ -214,6 +220,15 @@
         assertNonNegativeInteger(value.z, "view.visibleRegion.z");
         assertPositiveInteger(value.width, "view.visibleRegion.width");
         assertPositiveInteger(value.depth, "view.visibleRegion.depth");
+    }
+
+    function validateCameraCenter(value) {
+        if (value === null)
+            return;
+        assertObject(value, "3D render frame view.cameraCenter");
+        assertKnownKeys(value, ["x", "z"], "3D render frame view.cameraCenter");
+        assertNumber(value.x, "view.cameraCenter.x");
+        assertNumber(value.z, "view.cameraCenter.z");
     }
 
     function assertKnownKeys(object, keys, label) {

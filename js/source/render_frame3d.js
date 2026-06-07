@@ -14,6 +14,7 @@
         const board = runtime.board;
         const view = normalizeView(state, opts.view || opts, board);
         const objects = buildRenderObjects3D(state);
+        const cells = buildRenderCells3D(board, view.renderRegion);
 
         const frame = {
             model: contract ? contract.MODEL : "psnext-grid3",
@@ -23,12 +24,13 @@
                 width: board.width,
                 height: board.height,
                 depth: board.depth,
-                layerCount: board.layerCount
+                layerCount: board.layerCount,
+                renderCellCount: cells.length
             },
             spriteGrid: buildSpriteGrid3D(state, objects, opts),
             objects,
-            drawPlan: buildDrawPlan3D(state, board, view),
-            cells: buildRenderCells3D(board),
+            drawPlan: buildDrawPlan3D(state, board, view, cells),
+            cells,
             session: normalizeSessionState(opts.sessionState),
             effects: normalizeRenderEffects(opts.effects, state, runtime),
             view
@@ -40,7 +42,7 @@
         const sourceObjects = objects || [];
         let width = positiveInteger(state && state.sprite_size, 5);
         let height = positiveInteger(state && state.cell_height, width);
-        let depth = positiveInteger(opts && opts.spriteDepth, positiveInteger(state && state.sprite_depth, 1));
+        let depth = positiveInteger(opts && opts.spriteDepth, positiveInteger(state && state.sprite_depth, width));
 
         for (const object of sourceObjects) {
             const size = object && object.visual && object.visual.voxels && object.visual.voxels.size;
@@ -434,10 +436,10 @@
         return "transparent";
     }
 
-    function buildDrawPlan3D(state, board, view) {
+    function buildDrawPlan3D(state, board, view, cells) {
         return {
             objectGroups: buildObjectGroups(state),
-            cellOrder: buildCellOrder3D(board, view)
+            cellOrder: buildCellOrder3D(cells, view)
         };
     }
 
@@ -459,17 +461,27 @@
         return groups;
     }
 
-    function buildRenderCells3D(board) {
+    function buildRenderCells3D(board, renderRegion) {
         const cells = [];
-        for (let index = 0; index < board.cellCount; index++) {
-            const coord = board.indexToCoord(index);
-            cells[index] = {
-                index,
-                x: coord.x,
-                y: coord.y,
-                z: coord.z,
-                objectIds: objectIdsFromCell(board.getCell(index), board.objectCount)
-            };
+        const region = renderRegion || {
+            x: 0,
+            z: 0,
+            width: board.width,
+            depth: board.depth
+        };
+        for (let x = region.x; x < region.x + region.width; x++) {
+            for (let y = 0; y < board.height; y++) {
+                for (let z = region.z; z < region.z + region.depth; z++) {
+                    const index = board.coordToIndex(x, y, z);
+                    cells.push({
+                        index,
+                        x,
+                        y,
+                        z,
+                        objectIds: objectIdsFromCell(board.getCell(index), board.objectCount)
+                    });
+                }
+            }
         }
         return cells;
     }
@@ -487,14 +499,12 @@
         return ids;
     }
 
-    function buildCellOrder3D(board, view) {
+    function buildCellOrder3D(cells, view) {
         const direction = cameraVectorFromYawPitch(view.yaw, view.pitch);
-        const indices = [];
-        for (let index = 0; index < board.cellCount; index++)
-            indices.push(index);
+        const indices = cells.map((cell, index) => index);
         indices.sort((left, right) => {
-            const a = board.indexToCoord(left);
-            const b = board.indexToCoord(right);
+            const a = cells[left];
+            const b = cells[right];
             const da = a.x * direction.x + a.y * direction.y + a.z * direction.z;
             const db = b.x * direction.x + b.y * direction.y + b.z * direction.z;
             if (da !== db)
@@ -512,6 +522,7 @@
         const metadata = state && state.metadata || {};
         const sourceView = viewFrom3DMetadata(state);
         const requested = Object.assign({}, sourceView, view || {});
+        const visibleRegion = normalizeVisibleRegion(requested.visibleRegion, board);
         return {
             projection: requested.projection || "perspective",
             yaw: numberOrDefault(requested.yaw, 0),
@@ -522,7 +533,9 @@
             shade: requested.shade === undefined ? true : !!requested.shade,
             visibility: requested.visibility || "all",
             slice: requested.slice || null,
-            visibleRegion: normalizeVisibleRegion(requested.visibleRegion, board)
+            cameraCenter: normalizeCameraCenter(requested.cameraCenter),
+            visibleRegion,
+            renderRegion: normalizeRenderRegion(requested.renderRegion, visibleRegion, requested, board)
         };
     }
 
@@ -563,11 +576,13 @@
     function visibleRegionFromOldFlickScreenDat(value, board) {
         if (!Array.isArray(value) || value.length !== 4)
             return null;
+        const x = nonNegativeInteger(value[0], 0);
+        const z = nonNegativeInteger(value[1], 0);
         return normalizeVisibleRegion({
-            x: value[0],
-            z: value[1],
-            width: value[2],
-            depth: value[3]
+            x,
+            z,
+            width: value[2] - x,
+            depth: value[3] - z
         }, board);
     }
 
@@ -579,6 +594,243 @@
         const width = Math.min(positiveInteger(value.width, board.width), Math.max(0, board.width - x));
         const depth = Math.min(positiveInteger(value.depth, board.depth), Math.max(0, board.depth - z));
         return width > 0 && depth > 0 ? { x, z, width, depth } : null;
+    }
+
+    function normalizeRenderRegion(value, visibleRegion, view, board) {
+        if (value !== undefined)
+            return normalizeVisibleRegion(value, board);
+        if (!visibleRegion || !board)
+            return null;
+        return deriveCameraRenderRegion(visibleRegion, view || {}, board);
+    }
+
+    function deriveCameraRenderRegion(visibleRegion, view, board) {
+        const aspect = positiveNumber(view.viewportAspect, 1);
+        const projection = view.projection || "perspective";
+        const cameraZoom = positiveNumber(view.cameraZoom, 1);
+        const cameraViewAngle = positiveNumber(view.cameraViewAngle, 35);
+        const fit = cameraFitForRegion(visibleRegion, view, board, aspect, cameraZoom);
+        const target = cameraTargetForBoard(board);
+        const cameraDir = normalize3(cameraVectorFromYawPitch(view.yaw, view.pitch));
+        const cameraPosition = add3(target, scale3(cameraDir, cameraDistanceForProjection(projection, fit, cameraViewAngle)));
+        const basis = cameraBasisFromDirection(cameraDir, view);
+        const floorYs = [0.5, -Math.max(0, positiveNumber(board.height, 1) - 1) - 0.5];
+        const points = projection === "orthographic"
+            ? orthographicFootprintPoints(target, basis, cameraDir, fit.halfSpan, aspect, floorYs)
+            : perspectiveFootprintPoints(cameraPosition, basis, fit.halfSpan, aspect, cameraViewAngle, floorYs);
+        if (!points)
+            return fullBoardRegion(board);
+        return regionFromScenePoints(points, visibleRegion, board, view);
+    }
+
+    function cameraFitForRegion(region, view, board, aspect, zoom) {
+        const bounds = sceneBoundsForRegion(region, board, view && view.cameraCenter);
+        const basis = cameraBasisFromDirection(normalize3(cameraVectorFromYawPitch(view.yaw, view.pitch)), view);
+        const target = cameraTargetForBoard(board);
+        const corners = sceneBoundsCorners(bounds);
+        let horizontal = 0;
+        let vertical = 0;
+        let depth = 0;
+        for (const corner of corners) {
+            const delta = subtract3(corner, target);
+            horizontal = Math.max(horizontal, Math.abs(dot3(delta, basis.right)));
+            vertical = Math.max(vertical, Math.abs(dot3(delta, basis.up)));
+            depth = Math.max(depth, Math.abs(dot3(delta, basis.forward)));
+        }
+        return {
+            halfSpan: Math.max(vertical, horizontal / positiveNumber(aspect, 1), 0.5) * 1.15 / positiveNumber(zoom, 1),
+            depthHalf: depth
+        };
+    }
+
+    function cameraDistanceForProjection(projection, fit, viewAngle) {
+        if (projection === "perspective") {
+            const fovRadians = positiveNumber(viewAngle, 35) * Math.PI / 180;
+            return positiveNumber(fit.halfSpan, 0.5) / Math.tan(fovRadians / 2)
+                + Math.max(0, fit.depthHalf || 0);
+        }
+        return Math.max(1, fit.depthHalf * 3 + 1);
+    }
+
+    function sceneBoundsForRegion(region, board, cameraCenter) {
+        const center = cameraCenter || regionCenter(region);
+        const width = positiveNumber(region.width, positiveNumber(board.width, 1));
+        const depth = positiveNumber(region.depth, positiveNumber(board.depth, 1));
+        const height = positiveNumber(board.height, 1);
+        return {
+            min: { x: region.x - 0.5 - center.x, y: -height + 0.5, z: region.z - 0.5 - center.z },
+            max: { x: region.x + width - 0.5 - center.x, y: 0.5, z: region.z + depth - 0.5 - center.z }
+        };
+    }
+
+    function sceneBoundsCorners(bounds) {
+        return [
+            { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
+            { x: bounds.min.x, y: bounds.min.y, z: bounds.max.z },
+            { x: bounds.min.x, y: bounds.max.y, z: bounds.min.z },
+            { x: bounds.min.x, y: bounds.max.y, z: bounds.max.z },
+            { x: bounds.max.x, y: bounds.min.y, z: bounds.min.z },
+            { x: bounds.max.x, y: bounds.min.y, z: bounds.max.z },
+            { x: bounds.max.x, y: bounds.max.y, z: bounds.min.z },
+            { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z }
+        ];
+    }
+
+    function perspectiveFootprintPoints(cameraPosition, basis, halfSpan, aspect, viewAngle, floorYs) {
+        const fov = positiveNumber(viewAngle, 35) * Math.PI / 180;
+        const tanVertical = Math.tan(fov / 2);
+        const tanHorizontal = tanVertical * positiveNumber(aspect, 1);
+        const points = [];
+        for (const sx of [-1, 1]) {
+            for (const sy of [-1, 1]) {
+                const ray = normalize3(add3(
+                    basis.forward,
+                    add3(scale3(basis.right, sx * tanHorizontal), scale3(basis.up, sy * tanVertical))
+                ));
+                if (!intersectRayWithHorizontalPlanes(points, cameraPosition, ray, floorYs))
+                    return null;
+            }
+        }
+        return points;
+    }
+
+    function orthographicFootprintPoints(target, basis, cameraDir, halfSpan, aspect, floorYs) {
+        const points = [];
+        const widthHalf = halfSpan * positiveNumber(aspect, 1);
+        for (const sx of [-1, 1]) {
+            for (const sy of [-1, 1]) {
+                const origin = add3(target, add3(scale3(basis.right, sx * widthHalf), scale3(basis.up, sy * halfSpan)));
+                if (!intersectRayWithHorizontalPlanes(points, origin, basis.forward, floorYs))
+                    return null;
+            }
+        }
+        return points;
+    }
+
+    function intersectRayWithHorizontalPlanes(points, origin, ray, planeYs) {
+        if (Math.abs(ray.y) < 1e-9)
+            return false;
+        for (const y of planeYs) {
+            const t = (y - origin.y) / ray.y;
+            if (t < 0)
+                return false;
+            points.push(add3(origin, scale3(ray, t)));
+        }
+        return true;
+    }
+
+    function regionFromScenePoints(points, visibleRegion, board, view) {
+        const center = view && view.cameraCenter || regionCenter(visibleRegion);
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (const point of points) {
+            minX = Math.min(minX, point.x + center.x);
+            maxX = Math.max(maxX, point.x + center.x);
+            minZ = Math.min(minZ, point.z + center.z);
+            maxZ = Math.max(maxZ, point.z + center.z);
+        }
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ))
+            return fullBoardRegion(board);
+        const x = Math.max(0, Math.floor(minX - 0.5));
+        const z = Math.max(0, Math.floor(minZ - 0.5));
+        const maxCellX = Math.min(board.width, Math.ceil(maxX + 0.5));
+        const maxCellZ = Math.min(board.depth, Math.ceil(maxZ + 0.5));
+        return {
+            x,
+            z,
+            width: Math.max(1, maxCellX - x),
+            depth: Math.max(1, maxCellZ - z)
+        };
+    }
+
+    function fullBoardRegion(board) {
+        return {
+            x: 0,
+            z: 0,
+            width: board.width,
+            depth: board.depth
+        };
+    }
+
+    function regionCenter(region) {
+        return {
+            x: region.x + (region.width - 1) / 2,
+            z: region.z + (region.depth - 1) / 2
+        };
+    }
+
+    function normalizeCameraCenter(value) {
+        return value && Number.isFinite(value.x) && Number.isFinite(value.z)
+            ? { x: value.x, z: value.z }
+            : null;
+    }
+
+    function cameraTargetForBoard(board) {
+        const height = board ? board.height : 1;
+        return {
+            x: 0,
+            y: -Math.max(0, positiveNumber(height, 1) - 1) / 2,
+            z: 0
+        };
+    }
+
+    function cameraBasisFromDirection(cameraDir, view) {
+        const forward = scale3(normalize3(cameraDir), -1);
+        const upHint = cameraUpVectorForDirection(cameraDir, view);
+        let right = normalize3(cross3(forward, upHint));
+        if (vectorLength(right) === 0)
+            right = { x: 1, y: 0, z: 0 };
+        const up = normalize3(cross3(right, forward));
+        return { forward, right, up };
+    }
+
+    function cameraUpVectorForDirection(direction, view) {
+        const nearVertical = Math.abs(direction.y) > 0.999;
+        if (!nearVertical)
+            return { x: 0, y: 1, z: 0 };
+        const yaw = (Number.isFinite(view && view.yaw) ? view.yaw : 0) * Math.PI / 180;
+        return { x: -Math.sin(yaw), y: 0, z: -Math.cos(yaw) };
+    }
+
+    function add3(a, b) {
+        return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+    }
+
+    function subtract3(a, b) {
+        return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+    }
+
+    function scale3(vector, scale) {
+        return { x: vector.x * scale, y: vector.y * scale, z: vector.z * scale };
+    }
+
+    function dot3(a, b) {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+
+    function cross3(a, b) {
+        return {
+            x: a.y * b.z - a.z * b.y,
+            y: a.z * b.x - a.x * b.z,
+            z: a.x * b.y - a.y * b.x
+        };
+    }
+
+    function normalize3(vector) {
+        const length = vectorLength(vector);
+        if (length === 0)
+            return { x: 0, y: 0, z: 0 };
+        return {
+            x: vector.x / length,
+            y: vector.y / length,
+            z: vector.z / length
+        };
+    }
+
+    function vectorLength(vector) {
+        return Math.hypot(vector.x, vector.y, vector.z);
     }
 
     function nonNegativeInteger(value, fallback) {

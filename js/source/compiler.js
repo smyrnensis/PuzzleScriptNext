@@ -5,10 +5,6 @@
 var relativeDirections = ['^', 'v', '<', '>', 'perpendicular', 'parallel'];
 var simpleAbsoluteDirections = ['up', 'down', 'left', 'right'];
 var simpleRelativeDirections = ['^', 'v', '<', '>'];
-var psRuleCellDirections = ['>', '<', '^', 'v', 'up', 'down', 'left', 'right', 'action', 'moving',
-    'stationary', 'no', 'randomdir', 'random', 'horizontal', 'vertical', 'orthogonal', 'perpendicular', 'parallel'];
-var simpleAbsoluteDirections3d = ['left', 'right', 'front', 'back', 'up', 'down'];
-var simpleRelativeDirections3d = ['^', 'v', '<', '>', 'o', 'x'];
 
 var relativeDirs = ['^', 'v', '<', '>', 'parallel', 'perpendicular']; //used to index the following
 //I use _par/_perp just to keep track of providence for replacement purposes later.
@@ -17,45 +13,6 @@ var relativeDict = {
     'up': ['left', 'right', 'down', 'up', 'vertical_par', 'horizontal_perp'],
     'down': ['right', 'left', 'up', 'down', 'vertical_par', 'horizontal_perp'],
     'left': ['down', 'up', 'right', 'left', 'horizontal_par', 'vertical_perp']
-};
-
-const relativeDict3d = {
-    right: { "^": "front", "v": "back", "<": "left", ">": "right", o: "up", x: "down" },
-    left: { "^": "front", "v": "back", "<": "right", ">": "left", o: "down", x: "up" },
-    front: { "^": "left", "v": "right", "<": "back", ">": "front", o: "up", x: "down" },
-    back: { "^": "left", "v": "right", "<": "front", ">": "back", o: "down", x: "up" },
-    up: { "^": "left", "v": "right", "<": "down", ">": "up", o: "back", x: "front" },
-    down: { "^": "left", "v": "right", "<": "up", ">": "down", o: "front", x: "back" }
-};
-
-const directionBits3d = {
-    up: 1,
-    down: 2,
-    left: 4,
-    right: 8,
-    action: 16,
-    front: 32,
-    back: 64,
-    randomdir: 1,
-    "^": 32,
-    "v": 64,
-    "<": 4,
-    ">": 8,
-    o: 1,
-    x: 2,
-    moving: 127,
-    stationary: 0,
-    "": 0
-};
-
-const directionDeltas3d = {
-    left: { x: -1, y: 0, z: 0 },
-    right: { x: 1, y: 0, z: 0 },
-    front: { x: 0, y: 0, z: -1 },
-    back: { x: 0, y: 0, z: 1 },
-    up: { x: 0, y: -1, z: 0 },
-    down: { x: 0, y: 1, z: 0 },
-    action: { x: 0, y: 0, z: 0 }
 };
 
 const directionaggregates = {
@@ -68,19 +25,6 @@ const directionaggregates = {
     'moving': ['up', 'down', 'left', 'right', 'action'], // todo: reaction
     'orthogonal': ['up', 'down', 'left', 'right'],
     'perpendicular': ['^', 'v'],
-    'parallel': ['<', '>']
-};
-
-const directionAggregates3d = {
-    'horizontal': ['left', 'right', 'front', 'back'],
-    'horizontal_par': ['left', 'right', 'front', 'back'],
-    'horizontal_perp': ['left', 'right', 'front', 'back'],
-    'vertical': ['up', 'down'],
-    'vertical_par': ['up', 'down'],
-    'vertical_perp': ['up', 'down'],
-    'moving': ['left', 'right', 'front', 'back', 'up', 'down', 'action'],
-    'orthogonal': ['left', 'right', 'front', 'back', 'up', 'down'],
-    'perpendicular': ['^', 'v', 'o', 'x'],
     'parallel': ['<', '>']
 };
 
@@ -268,10 +212,6 @@ function expandObjectDef(state, objid, obj) {
             newobj.spriteoffset = { ...oldobj.spriteoffset };
             newobj.spritematrix = oldobj.spritematrix.map(row => [ ...row ]);
         }
-        if (!newobj.sprite3matrix && oldobj && oldobj.sprite3matrix) {
-            newobj.sprite3offset = oldobj.sprite3offset ? { ...oldobj.sprite3offset } : { row: 0, col: 0, slice: 0 };
-            newobj.sprite3matrix = oldobj.sprite3matrix.map(row => row.map(col => [ ...col ]));
-        }
 
         state.objects[newid] = newobj;
         return [ newid, newobj ];
@@ -306,10 +246,6 @@ function applyTransforms(state, obj) {
             if (cloneobj && !cloneobj.vector) {
                 obj.spriteoffset = { ...cloneobj.spriteoffset };    
                 obj.spritematrix = cloneobj.spritematrix.map(row => [ ...row ]);
-                if (cloneobj.sprite3matrix) {
-                    obj.sprite3offset = cloneobj.sprite3offset ? { ...cloneobj.sprite3offset } : { row: 0, col: 0, slice: 0 };
-                    obj.sprite3matrix = cloneobj.sprite3matrix.map(row => row.map(col => [ ...col ]));
-                }
             } else logError(`Sprite object cannot copy from "${errorCase(obj.cloneSprite)}".`, obj.lineNumber);
         }
         applySpriteTransforms(obj);
@@ -532,8 +468,8 @@ function generateExtraMembers(state) {
     }
 
     // how many words do our bitvecs need to hold?
-    MOV_BITS = isThreeDimensionsEnabled(state) ? 7 : 5;
-    MOV_MASK = (1 << MOV_BITS) - 1;
+    MOV_BITS = 8;
+    MOV_MASK = 0xff;
     STRIDE_OBJ = Math.ceil(state.objectCount / 32) | 0;         // doc: size of BitVec to hold objects, at 32 bits per
     STRIDE_MOV = Math.ceil(layerCount * MOV_BITS / 32) | 0;     // doc: size of BitVec to hold directions, at 5 bits per
     state.STRIDE_OBJ = STRIDE_OBJ;
@@ -1023,27 +959,19 @@ function levelAllObjects(state) {
 ////
 //also assigns glyphDict
 function levelsToArray(state) {
-    if (state.levels.at(-1).length == 0)
-        state.levels.pop();
-
-    const result = levelEntriesToArray(state, state.levels, (level, section) => {
-        level[1] = section; // todo: fix it
-        return levelFromString(state, level);
-    });
-	state.levels = result.levels;
-	state.links = result.links;
-}
-
-function levelEntriesToArray(state, rawLevels, lowerPlayableLevel) {
 	const levels = [];
     const links = [];
     //const links = {};
     //const targets = new Set();
     let section, title, description, gotoFlag, input;
+    
+    if (state.levels.at(-1).length == 0)
+        state.levels.pop();
+
     let levelNo = 1;
     // compile each level command
     // parse: state.levels.push([ symbols.start, symbols.text, state.lineNumber, symbols.link ]);
-    rawLevels.forEach(level => {
+    state.levels.forEach(level => {
         title ||= `Level ${levelNo}`;
 		if (level[0] == 'message') {
             if (gotoFlag) logWarning('Message unreachable due to previous GOTO.', level[2]);
@@ -1082,7 +1010,8 @@ function levelEntriesToArray(state, rawLevels, lowerPlayableLevel) {
 		} else {
             if (gotoFlag && links.length == 0) 
                 logWarning('Level unreachable due to previous GOTO.', level[0]);
-			levels.push(lowerPlayableLevel(level, section));
+            level[1] = section; // todo: fix it
+			levels.push(levelFromString(state, level));
             levels.at(-1).title = title;
             levels.at(-1).linksTop = links.length;
             if (input) levels.at(-1).input = input;
@@ -1101,215 +1030,8 @@ function levelEntriesToArray(state, rawLevels, lowerPlayableLevel) {
             link.targetNo = -9999;
         }
     });
-    return { levels, links };
-}
-
-function lowerThreeDimensionLevels(state) {
-    const rawLevels = state.threeDimensionLevels || [];
-    const threeDimensionLevels = getThreeDimensionLevelApi();
-
-    if (rawLevels.length > 0 && rawLevels.at(-1).length == 0)
-        rawLevels.pop();
-
-    if (rawLevels.length == 0) {
-        delete state.threeDimensionLevels;
-        if (isThreeDimensionsEnabled(state))
-            state.levels = [];
-        return;
-    }
-
-    if (!threeDimensionLevels) {
-        logErrorNoLine('3D level support is not loaded.');
-        delete state.threeDimensionLevels;
-        if (isThreeDimensionsEnabled(state))
-            state.levels = [];
-        return;
-    }
-
-    const result = levelEntriesToArray(state, rawLevels, rawLevel => {
-        return levelFromThreeDimensionRawLevel(state, rawLevel, threeDimensionLevels);
-    });
-
-    state.levels = result.levels;
-    state.links = result.links;
-    delete state.threeDimensionLevels;
-}
-
-function levelFromThreeDimensionRawLevel(state, rawLevel, threeDimensionLevels) {
-    const lineNumber = rawLevel[0];
-    const lines = rawLevel.slice(2).map((text, index) => ({
-        text,
-        lineNumber: lineNumber + index
-    }));
-    const result = threeDimensionLevels.parseThreeDimensionLevel(lines);
-
-    result.errors.forEach(error => {
-        logError(`3D level ${error.code}: ${error.message}`, error.lineNumber || lineNumber);
-    });
-    if (result.errors.length == 0)
-        return levelFromThreeDimensionParsedSource(state, result.level);
-    return result.level;
-}
-
-function levelFromThreeDimensionParsedSource(state, parsedLevel) {
-    const threeDimensionLevels = getThreeDimensionLevelApi();
-    const strideObj = getStrideObj(state);
-    const width = parsedLevel.width;
-    const height = parsedLevel.height;
-    const depth = parsedLevel.depth;
-    const cellCount = width * height * depth;
-    const level = {
-        is3d: true,
-        lineNumber: parsedLevel.lineNumber,
-        width,
-        height,
-        depth,
-        n_tiles: cellCount,
-        cellCount,
-        layerCount: state.collisionLayers.length,
-        objects: new Int32Array(cellCount * strideObj),
-        slices: parsedLevel.slices,
-        rowLineNumbers: parsedLevel.rowLineNumbers
-    };
-
-    for (let x = 0; x < width; x++) {
-        for (let y = 0; y < height; y++) {
-            for (let z = 0; z < depth; z++) {
-                const row = parsedLevel.slices[y][z];
-                const ch = row.charAt(x);
-                const mask = state.glyphDict[ch];
-                const lineNumber = getLevel3RowLineNumber(parsedLevel, y, z);
-
-                if (mask == undefined) {
-                    if (state.propertiesDict[ch] === undefined) {
-                        logError('Error, symbol "' + ch + '", used in map, not found.', lineNumber);
-                    } else {
-                        logError('Error, symbol "' + ch + '" is defined using OR, and therefore ambiguous - it cannot be used in a map. Did you mean to define it in terms of AND?', lineNumber);
-                    }
-                    return level;
-                }
-
-                const index = threeDimensionLevels.coordToIndex3(x, y, z, { width, height, depth });
-                const maskint = glyphMaskToBitVec(mask, level.layerCount, strideObj);
-                setLevel3Cell(level, index, maskint, strideObj);
-            }
-        }
-    }
-
-    applyLevel3Background(state, level, strideObj);
-    return level;
-}
-
-function getThreeDimensionLevelApi() {
-    if (typeof ThreeDimensionLevels !== 'undefined')
-        return ThreeDimensionLevels;
-    if (typeof window !== 'undefined' && window.ThreeDimensionLevels)
-        return window.ThreeDimensionLevels;
-    if (typeof globalThis !== 'undefined' && globalThis.ThreeDimensionLevels)
-        return globalThis.ThreeDimensionLevels;
-    return null;
-}
-
-function getStrideObj(state) {
-    if (state.STRIDE_OBJ !== undefined)
-        return state.STRIDE_OBJ;
-    return STRIDE_OBJ;
-}
-
-function getLevel3RowLineNumber(parsedLevel, y, z) {
-    if (parsedLevel.rowLineNumbers && parsedLevel.rowLineNumbers[y])
-        return parsedLevel.rowLineNumbers[y][z];
-    return parsedLevel.lineNumber + z;
-}
-
-function glyphMaskToBitVec(mask, layerCount, strideObj) {
-    const maskint = new BitVec(strideObj);
-    mask = mask.concat([]);
-    for (let layer = 0; layer < layerCount; layer++) {
-        if (mask[layer] >= 0)
-            maskint.ibitset(mask[layer]);
-    }
-    return maskint;
-}
-
-function getLevel3Cell(level, index, strideObj) {
-    return new BitVec(level.objects.subarray(index * strideObj, index * strideObj + strideObj));
-}
-
-function setLevel3Cell(level, index, vec, strideObj) {
-    for (let i = 0; i < vec.data.length; i++)
-        level.objects[index * strideObj + i] = vec.data[i];
-}
-
-function applyLevel3Background(state, level, strideObj) {
-    const backgroundLayerMask = state.layerMasks[state.backgroundlayer];
-    const levelBackgroundMask = calcLevel3BackgroundMask(state, level, strideObj);
-
-    for (let i = 0; i < level.cellCount; i++) {
-        const cell = getLevel3Cell(level, i, strideObj);
-        if (!backgroundLayerMask.anyBitsInCommon(cell)) {
-            cell.ior(levelBackgroundMask);
-            setLevel3Cell(level, i, cell, strideObj);
-        }
-    }
-}
-
-function calcLevel3BackgroundMask(state, level, strideObj) {
-    const backgroundMask = state.layerMasks[state.backgroundlayer];
-
-    for (let i = 0; i < level.cellCount; i++) {
-        const cell = getLevel3Cell(level, i, strideObj);
-        cell.iand(backgroundMask);
-        if (!cell.iszero())
-            return cell;
-    }
-
-    const cell = new BitVec(strideObj);
-    cell.ibitset(state.backgroundid);
-    return cell;
-}
-
-function hasLevels2(state) {
-    return !!(state && Array.isArray(state.levels) && state.levels.length > 0);
-}
-
-function hasThreeDimensionLevels(state) {
-    return !!(state
-        && Array.isArray(state.levels)
-        && state.levels.some(level => level && level.is3d));
-}
-
-function getRuntimeLevelGateMessage(state) {
-    if (hasThreeDimensionLevels(state)) {
-        return '3D levels parsed successfully. 3D browser playback requires the 3D runtime, render-frame, and renderer scripts to be loaded.';
-    }
-
-    if (!hasLevels2(state)) {
-        return 'No levels found. Add some levels!';
-    }
-
-    return null;
-}
-
-function getPuzzleHostCapabilities() {
-    if (typeof PuzzleHostCapabilities !== "undefined")
-        return PuzzleHostCapabilities;
-    if (typeof window !== "undefined" && window.PuzzleHostCapabilities)
-        return window.PuzzleHostCapabilities;
-    if (typeof globalThis !== "undefined" && globalThis.PuzzleHostCapabilities)
-        return globalThis.PuzzleHostCapabilities;
-    return null;
-}
-
-function canRenderThreeDimensionLevelsInBrowser() {
-    const capabilities = getPuzzleHostCapabilities();
-    return !!(capabilities && typeof capabilities.canStart === "function" && capabilities.canStart());
-}
-
-function restoreProcessInput2DBridge() {
-    const capabilities = getPuzzleHostCapabilities();
-    if (capabilities && typeof capabilities.restore === "function")
-        capabilities.restore();
+	state.levels = levels;
+	state.links = links;
 }
 
 function extractSections(state) {
@@ -1416,55 +1138,19 @@ function fixUpGosubs(rules, subroutines) {
 
 // return true if this is a directional rule
 function directionalRule(rule) {
-    const relativeRuleDirections = getRuleRelativeDirections(rule.state);
     for (const row of [ ...rule.lhs, ...rule.rhs ]) {
         if (row.length > 1)
             return true;
         for (const cell of row) {
             for (var k = 0; k < cell.length; k += 2) {
-                if (relativeRuleDirections.includes(cell[k]))
+                if (relativeDirections.includes(cell[k]))
                     return true;
-                if (cell[k + 1].split(':').some(p => relativeRuleDirections.includes(p)))
+                if (cell[k + 1].split(':').some(p => relativeDirections.includes(p)))
                     return true;
             }
         }
     }
     return false;
-}
-
-function isThreeDimensionsEnabled(state) {
-    if (!state || !state.metadata)
-        return false;
-    if (Array.isArray(state.metadata))
-        return state.metadata.includes("three_dimensions");
-    return !!state.metadata.three_dimensions;
-}
-
-function getRuleDirectionAggregates(state) {
-    return isThreeDimensionsEnabled(state) ? directionAggregates3d : directionaggregates;
-}
-
-function getRuleDirectionAggregate(state, direction) {
-    return getRuleDirectionAggregates(state)[direction];
-}
-
-function getRuleAbsoluteDirections(state) {
-    return isThreeDimensionsEnabled(state) ? simpleAbsoluteDirections3d : simpleAbsoluteDirections;
-}
-
-function getRuleRelativeDirections(state) {
-    return isThreeDimensionsEnabled(state) ? simpleRelativeDirections3d : simpleRelativeDirections;
-}
-
-function isRuleCellDirection(state, token) {
-    if (psRuleCellDirections.includes(token))
-        return true;
-    return isThreeDimensionsEnabled(state) && [
-        "front",
-        "back",
-        "o",
-        "x"
-    ].includes(token);
 }
 
 function findIndexAfterToken(str, tokens, tokenIndex) {
@@ -1544,8 +1230,6 @@ function processRuleString(rule, state, curRules) {
     var globalRule = false;
     let isOnce = false;
     const prefixes = [];
-    const ruleAbsoluteDirections = getRuleAbsoluteDirections(state);
-    const ruleRelativeDirections = getRuleRelativeDirections(state);
 
     if (tokens.length===1) {
         if (tokens[0]==="startloop" ) {
@@ -1592,8 +1276,8 @@ function processRuleString(rule, state, curRules) {
                         } else {
                             logError('Two "+"s (the "append to previous rule group" symbol) applied to the same rule.', lineNumber);
                         }
-                    } else if (getRuleDirectionAggregate(state, token)) {
-                        directions = directions.concat(getRuleDirectionAggregate(state, token));
+                    } else if (token in directionaggregates) {
+                        directions = directions.concat(directionaggregates[token]);
                     } else if (token === 'late') {
                         late = true;                        
                     } else if (token === 'rigid') {
@@ -1607,15 +1291,15 @@ function processRuleString(rule, state, curRules) {
                         globalRule = true;
                     } else if (token == 'once') {
                         isOnce = true;
-                    } else if (ruleAbsoluteDirections.indexOf(token) >= 0) {
+                    } else if (simpleAbsoluteDirections.indexOf(token) >= 0) {
                         directions.push(token);
-                    } else if (ruleRelativeDirections.indexOf(token) >= 0) {
+                    } else if (simpleRelativeDirections.indexOf(token) >= 0) {
                         logError('You cannot use relative directions (\"^v<>\") to indicate in which direction(s) a rule applies.  Use absolute directions indicators (Up, Down, Left, Right, Horizontal, or Vertical, for instance), or, if you want the rule to apply in all four directions, do not specify directions', lineNumber);
                     } else if (getTag(state, token)) {
                         prefixes.push(token);
                     } else if (token == '[') {
                         if (directions.length == 0) {
-                            directions = directions.concat(getRuleDirectionAggregate(state, 'orthogonal'));
+                            directions = directions.concat(directionaggregates['orthogonal']);
                         }
                         parsestate = 1;
                         i--;
@@ -1636,7 +1320,7 @@ function processRuleString(rule, state, curRules) {
                 }
                 incellrow = true;
                 curcell = [];
-            } else if (isRuleCellDirection(state, token)) {
+            } else if (directions_only.includes(token)) {
                 if (curcell.length % 2 == 1) {
                     logError("Error, an item can only have one direction/action at a time, but you're looking for several at once!", lineNumber);
                 } else if (!incellrow) {
@@ -1770,7 +1454,6 @@ if (lhs_cells.length == 0) {
 }
 
 var rule_line = {
-    state: state,
     directions: directions,
     lhs: lhs_cells,
     rhs: rhs_cells,
@@ -1801,7 +1484,6 @@ function deepCloneHS(HS, fn) {
 
 function deepCloneRule(rule, fnlhs, fnrhs) {
 	return {
-        state: rule.state,
 		lineNumber: rule.lineNumber,
 		direction: rule.direction,
 		lhs: deepCloneHS(rule.lhs, fnlhs),
@@ -1952,18 +1634,17 @@ function expandRuleWithTags(state, rule) {
 function expandRulesWithMultiDirectionObjects(state, rules) {
     var newrules = [];
     for (const rule of rules) {
-        const aggregates = getRuleDirectionAggregates(state);
         const objs = [ ...rule.lhs, ...rule.rhs ].flat()
             .map(cell => cell.filter((_,x) => x % 2 == 1))
             .flat();
         const dirs = objs.map(obj => obj.split(':'))
             .flat()
-            .filter((part,x,a) => part in aggregates && a.indexOf(part) == x);
+            .filter((part,x,a) => part in directionaggregates && a.indexOf(part) == x);
         if (dirs.length == 0)
             newrules.push(rule);
         else {
             const muldir = dirs[0];
-            for (const expdir of aggregates[muldir]) {
+            for (const expdir of directionaggregates[muldir]) {
                 const fnsub = cell => cell.map((c,x) => (x % 2 == 0) ? c
                     : (c == muldir) ? expdir 
                     : (c.includes(`:${muldir}`)) ? c.replace(`:${muldir}`, `:${expdir}`)
@@ -1998,9 +1679,8 @@ function expandRulesWithMultipleDirections(state, rules) {
         var ruledirs = rule.directions;
         for (var j = 0; j < ruledirs.length; j++) {
             var dir = ruledirs[j];
-            const aggregateDirs = getRuleDirectionAggregate(state, dir);
-            if (aggregateDirs && directionalRule(rule)) {
-                var dirs = aggregateDirs;
+            if (dir in directionaggregates && directionalRule(rule)) {
+                var dirs = directionaggregates[dir];
                 for (var k = 0; k < dirs.length; k++) {
                     var modifiedrule = deepCloneRule(rule);
                     modifiedrule.direction = dirs[k];
@@ -2109,11 +1789,10 @@ function getPropertiesFromCell(state, cell) {
 //returns you a list of object names in that cell that're moving
 function getMovings(state, cell) {
     var result = [];
-    const aggregates = getRuleDirectionAggregates(state);
     for (var j = 0; j < cell.length; j += 2) {
         var dir = cell[j];
         var name = cell[j + 1];
-        if (dir in aggregates) {
+        if (dir in directionaggregates) {
             result.push([name, dir]);
         }
     }
@@ -2446,7 +2125,7 @@ function concretizeMovingRule(state, rule, lineNumber) {
                         //just do the base property, let future iterations take care of the others
                         var cand_name = movings[0][0];
                         var ambiguous_dir = movings[0][1];
-                        var concreteDirs = getRuleDirectionAggregate(state, ambiguous_dir);
+                        var concreteDirs = directionaggregates[ambiguous_dir];
                         for (var l = 0; l < concreteDirs.length; l++) {
                             var concreteDirection = concreteDirs[l];
                             var newrule = deepCloneRule(cur_rule);
@@ -2674,31 +2353,28 @@ function atomizeCellAggregates(state, cell, lineNumber) {
 // replace all relative directions in every rule cell by absolute based on rule direction (direction and object)
 function convertRelativeDirsToAbsolute(state, rule) {
     [ ...rule.lhs, ...rule.rhs ].flat().forEach(cell => {
-        absolutifyRuleCell(state, rule.direction, cell);
+        absolutifyRuleCell(rule.direction, cell);
     });
 }
 
-function absolutifyRuleCell(state, forward, cell) {
-    const absOf = dir => {
-        if (isThreeDimensionsEnabled(state))
-            return absolutifyCellDirection3D(dir, forward);
-        return relativeDirs.includes(dir) ? relativeDict[forward][relativeDirs.indexOf(dir)] : dir;
-    };
+function absolutifyRuleCell(forward, cell) {
+    const absOf = dir => relativeDirs.includes(dir) ? relativeDict[forward][relativeDirs.indexOf(dir)] : dir;
     for (var i = 0; i < cell.length; i += 2) {
         cell[i] = absOf(cell[i]);
         cell[i + 1] = cell[i + 1].split(':').map(p => absOf(p)).join(':');
     }
 }
 
-function absolutifyCellDirection3D(dir, forward) {
-    const frame = relativeDict3d[forward];
-    return frame && frame[dir] || dir;
-}
-
 function rulesToMask(state) {
     /*
 
     */
+    var layerCount = state.collisionLayers.length;
+    var layerTemplate = [];
+    for (var i = 0; i < layerCount; i++) {
+        layerTemplate.push(null);
+    }
+
     for (var i = 0; i < state.rules.length; i++) {
         var rule = state.rules[i];
         for (var j = 0; j < rule.lhs.length; j++) {
@@ -2706,35 +2382,97 @@ function rulesToMask(state) {
             var cellrow_r = rule.rhs[j];
             for (var k = 0; k < cellrow_l.length; k++) {
                 var cell_l = cellrow_l[k];
-                var lowering = lowerCellPatternMasksShared(state, rule, cell_l, {
-                    cellIndex: k,
-                    rowLength: cellrow_l.length,
-                    rhsCell: rule.rhs.length > 0 ? cellrow_r[k] : null,
-                    hasRhs: rule.rhs.length > 0
-                }, {
-                    strideObj: STRIDE_OBJ,
-                    strideMov: STRIDE_MOV,
-                    movementBits: MOV_BITS,
-                    movementMask: MOV_MASK,
-                    directionMask: function(dir) { return dirMasks[dir] || 0; }
-                });
+                var layersUsed_l = layerTemplate.concat([]);
+                var objectsPresent = new BitVec(STRIDE_OBJ);
+                var objectsMissing = new BitVec(STRIDE_OBJ);
+                var anyObjectsPresent = [];
+                var movementsPresent = new BitVec(STRIDE_MOV);
+                var movementsMissing = new BitVec(STRIDE_MOV);
 
-                if (lowering.ellipsis) {
+                var objectlayers_l = new BitVec(STRIDE_MOV);
+                for (var l = 0; l < cell_l.length; l += 2) {
+                    var object_dir = cell_l[l];
+                    if (object_dir === '...') {
+                        objectsPresent = ellipsisPattern;
+                        if (cell_l.length !== 2) {
+                            logError("You can't have anything in with an ellipsis. Sorry.", rule.lineNumber);
+                        } else if ((k === 0) || (k === cellrow_l.length - 1)) {
+                            logError("There's no point in putting an ellipsis at the very start or the end of a rule", rule.lineNumber);
+                        } else if (rule.rhs.length > 0) {
+                            var rhscell = cellrow_r[k];
+                            if (rhscell.length !== 2 || rhscell[0] !== '...') {
+                                logError("An ellipsis on the left must be matched by one in the corresponding place on the right.", rule.lineNumber);
+                            }
+                        }
+                        break;
+                    } else if (object_dir === 'random') {
+                        logError("RANDOM cannot be matched on the left-hand side, it can only appear on the right", rule.lineNumber);
+                        continue;
+                    }
+
+                    var object_name = cell_l[l + 1];
+                    var object = state.objects[object_name];
+                    var objectMask = state.objectMasks[object_name];
+                    if (object) {
+                        var layerIndex = object.layer | 0;
+                    } else {
+                        var layerIndex = state.propertiesSingleLayer[object_name];
+                    }
+
+                    if (typeof(layerIndex) === "undefined") {
+                        logError("Oops!  " + object_name.toUpperCase() + " not assigned to a layer.", rule.lineNumber);
+                    }
+
+                    if (object_dir === 'no') {
+                        objectsMissing.ior(objectMask);
+                    } else {
+                        var existingname = layersUsed_l[layerIndex];
+                        if (existingname !== null) {
+                            rule.discard=[object_name.toUpperCase(), existingname.toUpperCase()];
+                        }
+
+                        layersUsed_l[layerIndex] = object_name;
+
+                        if (object) {
+                            objectsPresent.ior(objectMask);
+                            objectlayers_l.ishiftor(MOV_MASK, MOV_BITS * layerIndex);
+                        } else {
+                            anyObjectsPresent.push(objectMask);
+                        }
+
+                        if (object_dir === 'stationary') {
+                            movementsMissing.ishiftor(MOV_MASK, MOV_BITS * layerIndex);
+                        } else {
+                            movementsPresent.ishiftor(dirMasks[object_dir], MOV_BITS * layerIndex);
+                        }
+                    }
+                }
+
+                if (rule.rhs.length > 0) {
+                    var rhscell = cellrow_r[k];
+                    var lhscell = cellrow_l[k];
+                    if (rhscell[0] === '...' && lhscell[0] !== '...') {
+                        logError("An ellipsis on the right must be matched by one in the corresponding place on the left.", rule.lineNumber);
+                    }
+                    for (var l = 0; l < rhscell.length; l += 2) {
+                        var content = rhscell[l];
+                        if (content === '...') {
+                            if (rhscell.length !== 2) {
+                                logError("You can't have anything in with an ellipsis. Sorry.", rule.lineNumber);
+                            }
+                        }
+                    }
+                }
+
+                if (objectsPresent === ellipsisPattern) {
                     cellrow_l[k] = ellipsisPattern;
                     continue;
                 } else {
-                    cellrow_l[k] = new CellPattern([
-                        lowering.objectsPresent,
-                        lowering.objectsMissing,
-                        lowering.anyObjectsPresent,
-                        lowering.movementsPresent,
-                        lowering.movementsMissing,
-                        null
-                    ]);
+                    cellrow_l[k] = new CellPattern([objectsPresent, objectsMissing, anyObjectsPresent, movementsPresent, movementsMissing, null]);
                 }
 
                 //if X no X, then cancel
-                if (lowering.objectsPresent.anyBitsInCommon(lowering.objectsMissing)){
+                if (objectsPresent.anyBitsInCommon(objectsMissing)){
                     //if I'm about the remove the last representative of this line number, throw an error
                     var ln = rule.lineNumber;
                     if ( (i>0 && state.rules[i-1].lineNumber===ln) || ( (i+1<state.rules.length) && state.rules[i+1].lineNumber===ln)){
@@ -2751,293 +2489,147 @@ function rulesToMask(state) {
                     continue;
                 }
 
-                var replacementMasks = lowerCellReplacementMasksShared(state, rule, cellrow_l[k], cellrow_r[k], {
-                    objectsPresent: lowering.objectsPresent,
-                    movementsPresent: lowering.movementsPresent,
-                    objectlayers_l: lowering.objectlayers_l,
-                    layersUsed_l: lowering.layersUsed_l
-                }, {
-                    strideObj: STRIDE_OBJ,
-                    strideMov: STRIDE_MOV,
-                    movementBits: MOV_BITS,
-                    movementMask: MOV_MASK,
-                    directionMask: function(dir) { return dirMasks[dir] || 0; }
-                });
-                if (replacementMasks !== null) {
-                    cellrow_l[k].replacement = new CellReplacement([
-                        replacementMasks.objectsClear,
-                        replacementMasks.objectsSet,
-                        replacementMasks.movementsClear,
-                        replacementMasks.movementsSet,
-                        replacementMasks.movementsLayerMask,
-                        replacementMasks.randomEntityMask,
-                        replacementMasks.randomDirMask
-                    ]);
+                var cell_r = cellrow_r[k];
+                var layersUsed_r = layerTemplate.concat([]);
+                var layersUsedRand_r = layerTemplate.concat([]);
+
+                var objectsClear = new BitVec(STRIDE_OBJ);
+                var objectsSet = new BitVec(STRIDE_OBJ);
+                var movementsClear = new BitVec(STRIDE_MOV);
+                var movementsSet = new BitVec(STRIDE_MOV);
+
+                var objectlayers_r = new BitVec(STRIDE_MOV);
+                var randomMask_r = new BitVec(STRIDE_OBJ);
+                var postMovementsLayerMask_r = new BitVec(STRIDE_MOV);
+                var randomDirMask_r = new BitVec(STRIDE_MOV);
+                for (var l = 0; l < cell_r.length; l += 2) {
+                    var object_dir = cell_r[l];
+                    var object_name = cell_r[l + 1];
+
+                    if (object_dir === '...') {
+                        //logError("spooky ellipsis found! (should never hit this)");
+                        break;
+                    } else if (object_dir === 'random') {
+                        if (object_name in state.objectMasks) {
+                            var mask = state.objectMasks[object_name];
+                            randomMask_r.ior(mask);
+                            var values;
+                            if (state.propertiesDict.hasOwnProperty(object_name)) {
+                                values = state.propertiesDict[object_name];
+                            } else {
+                                //get line number declaration of object_name
+                                logWarning(`In this rule you're asking me to spawn a random ${object_name.toUpperCase()} for you, but that's already a concrete single object.  You wanna be using random with properties (things defined in terms of OR in the legend) so there's some things to select between.`, rule.lineNumber);
+                                values = [object_name];
+                            }
+                            for (var m = 0; m < values.length; m++) {
+                                var subobject = values[m];
+                                var layerIndex = state.objects[subobject].layer | 0;
+                                var existingname = layersUsed_r[layerIndex];
+                                if (existingname !== null) {
+                                    var o1 = subobject.toUpperCase();
+                                    var o2 = existingname.toUpperCase();
+                                    if (o1 !== o2) {
+                                        logWarning("This rule may try to spawn a " + o1 + " with random, but also requires a " + o2 + " be here, which is on the same layer - they shouldn't be able to coexist!", rule.lineNumber);
+                                    }
+                                }
+
+                                layersUsedRand_r[layerIndex] = subobject;
+                            }
+
+                        } else {
+                            logError('You want to spawn a random "' + object_name.toUpperCase() + '", but I don\'t know how to do that', rule.lineNumber);
+                        }
+                        continue;
+                    }
+
+                    var object = state.objects[object_name];
+                    var objectMask = state.objectMasks[object_name];
+                    if (object) {
+                        var layerIndex = object.layer | 0;
+                    } else {
+                        var layerIndex = state.propertiesSingleLayer[object_name];
+                    }
+
+
+                    if (object_dir == 'no') {
+                        objectsClear.ior(objectMask);
+                    } else {
+                        var existingname = layersUsed_r[layerIndex];
+                        if (existingname === null) {
+                            existingname = layersUsedRand_r[layerIndex];
+                        }
+
+                        if (existingname !== null) {
+                            if (rule.hasOwnProperty('discard')) {
+
+                            } else {
+                                logError('Rule matches object types that can\'t overlap: "' + object_name.toUpperCase() + '" and "' + existingname.toUpperCase() + '".', rule.lineNumber);
+                            }
+                        }
+
+                        layersUsed_r[layerIndex] = object_name;
+
+                        if (object_dir.length > 0) {
+                            postMovementsLayerMask_r.ishiftor(MOV_MASK, MOV_BITS * layerIndex);
+                        }
+
+                        var layerMask = state.layerMasks[layerIndex];
+
+                        if (object) {
+                            objectsSet.ibitset(object.id);
+                            objectsClear.ior(layerMask);
+                            objectlayers_r.ishiftor(MOV_MASK, MOV_BITS * layerIndex);
+                        } else {
+                            // shouldn't need to do anything here...
+                        }
+                        //possibility - if object not present on lhs in same position, clear movement
+                        if (object_dir === 'stationary') {
+                            movementsClear.ishiftor(MOV_MASK, MOV_BITS * layerIndex);
+                        }                
+                        if (object_dir === 'randomdir') {
+                            randomDirMask_r.ishiftor(dirMasks[object_dir], MOV_BITS * layerIndex);
+                        } else {
+                            movementsSet.ishiftor(dirMasks[object_dir], MOV_BITS * layerIndex);
+                        };
+                    }
                 }
+
+                //I don't know why these two ifs here are needed.
+                if (!(objectsPresent.bitsSetInArray(objectsSet.data))) {
+                    objectsClear.ior(objectsPresent); // clear out old objects
+                }
+                if (!(movementsPresent.bitsSetInArray(movementsSet.data))) {
+                    movementsClear.ior(movementsPresent); // ... and movements
+                }
+
+                /*
+                for rules like this I want to clear movements on newly-spawned entities
+                    [ >  Player | Crate ] -> [  >  Player | > Crate  ]
+                    [ > Player | ] -> [ Crate | Player ]
+
+                WITHOUT havin this rule remove movements
+                    [ > Player | ] -> [ Crate | Player ]
+                (bug #492)
+                */
+               
+                for (var l = 0; l < layerCount; l++) {
+                    if (layersUsed_l[l] !== null && layersUsed_r[l] === null) {
+                        // a layer matched on the lhs, but not on the rhs
+                        objectsClear.ior(state.layerMasks[l]);
+                        postMovementsLayerMask_r.ishiftor(MOV_MASK, MOV_BITS * l);
+                    }
+                }
+
+                objectlayers_l.iclear(objectlayers_r);
+
+                postMovementsLayerMask_r.ior(objectlayers_l);
+                if (!objectsClear.iszero() || !objectsSet.iszero() || !movementsClear.iszero() || !movementsSet.iszero() || !postMovementsLayerMask_r.iszero() || !randomMask_r.iszero() || !randomDirMask_r.iszero()) {
+                    // only set a replacement if something would change
+                    cellrow_l[k].replacement = new CellReplacement([objectsClear, objectsSet, movementsClear, movementsSet, postMovementsLayerMask_r, randomMask_r, randomDirMask_r]);
+                } 
             }
         }
     }
-}
-
-function lowerCellPatternMasksShared(state, rule, cell, context, options) {
-    const opts = options || {};
-    return getRuleLoweringApi().lowerCellPatternMasks(state, rule, cell, context, Object.assign({}, opts, {
-        makeMask: makeBitVec,
-        cloneMask: cloneBitVec,
-        onError: function(message, lineNumber) {
-            logError(message, lineNumber);
-        },
-        onWarning: function(message, lineNumber) {
-            logWarning(message, lineNumber);
-        }
-    }));
-}
-
-function rulesToMask3D(state, rules) {
-    const lowered = {
-        groups: [],
-        lateGroups: [],
-        winConditions: []
-    };
-    const sourceRules = rules || state.rules || [];
-
-    for (const rule of sourceRules) {
-        const loweredRule = lowerRule3D(state, rule);
-        if (loweredRule.late)
-            lowered.lateGroups.push(loweredRule);
-        else
-            lowered.groups.push(loweredRule);
-    }
-
-    state.rules3d = lowered;
-    return lowered;
-}
-
-function lowerCellReplacementMasksShared(state, rule, lhsCell, rhsCell, lhs, options) {
-    const opts = options || {};
-    return getRuleLoweringApi().lowerCellReplacementMasks(state, rule, lhsCell, rhsCell, lhs, Object.assign({}, opts, {
-        makeMask: makeBitVec,
-        cloneMask: cloneBitVec,
-        onError: function(message, lineNumber) {
-            logError(message, lineNumber);
-        },
-        onWarning: function(message, lineNumber) {
-            logWarning(message, lineNumber);
-        }
-    }));
-}
-
-function cloneBitVec(source, size) {
-    const clone = new BitVec(size);
-    clone.ior(source);
-    return clone;
-}
-
-function bitsSetInArrayCompat(mask, arr) {
-    if (mask.bitsSetInArray)
-        return mask.bitsSetInArray(arr);
-    const data = mask.data || mask;
-    for (let i = 0; i < data.length; i++) {
-        if ((data[i] & arr[i]) !== data[i])
-            return false;
-    }
-    return true;
-}
-
-function clearMaskCompat(target, source) {
-    if (target.iclear) {
-        target.iclear(source);
-        return;
-    }
-    const targetData = target.data || target;
-    const sourceData = source.data || source;
-    for (let i = 0; i < targetData.length; i++)
-        targetData[i] &= ~(sourceData[i] || 0);
-}
-
-function lowerRule3D(state, rule) {
-    const patterns = [];
-
-    for (let rowIndex = 0; rowIndex < rule.lhs.length; rowIndex++) {
-        patterns.push(lowerPatternRow3D(
-            state,
-            rule,
-            rule.lhs[rowIndex],
-            rule.rhs && rule.rhs[rowIndex],
-            rule.direction
-        ));
-    }
-
-    return {
-        lineNumber: rule.lineNumber,
-        direction: rule.direction,
-        groupNumber: rule.groupNumber,
-        late: !!rule.late,
-        rigid: !!rule.rigid,
-        commands: rule.commands || [],
-        randomRule: !!rule.randomRule,
-        globalRule: !!rule.globalRule,
-        isOnce: !!rule.isOnce,
-        discard: rule.discard ? rule.discard.slice() : undefined,
-        patterns
-    };
-}
-
-function lowerPatternRow3D(state, rule, lhsRow, rhsRow, direction) {
-    const delta = ruleDirectionDelta3d(direction);
-    const cells = [];
-    let ellipsisCount = 0;
-
-    for (let cellIndex = 0; cellIndex < lhsRow.length; cellIndex++) {
-        const lhsLowering = lowerCellPattern3D(state, rule, lhsRow[cellIndex], {
-            cellIndex,
-            rowLength: lhsRow.length,
-            rhsCell: rhsRow && rhsRow[cellIndex],
-            hasRhs: !!(rhsRow && rhsRow.length > 0)
-        });
-
-        if (lhsLowering.ellipsis) {
-            ellipsisCount++;
-            if (ellipsisCount > 2)
-                logError("You can't use more than two ellipses in a single cell match pattern.", rule.lineNumber);
-            if (cellIndex > 0 && lhsRow[cellIndex - 1] && lhsRow[cellIndex - 1][0] === "...")
-                logWarning("Why would you go and have two ellipses in a row like that? It's exactly the same as just having a single ellipsis, right?", rule.lineNumber);
-            cells.push({
-                ellipsis: true,
-                rowIndex: cellIndex
-            });
-            continue;
-        }
-
-        const lhsPattern = lhsLowering.pattern;
-        if (rhsRow && rhsRow[cellIndex])
-            lhsPattern.replacement = lowerCellReplacement3D(state, rule, lhsRow[cellIndex], rhsRow[cellIndex], lhsLowering);
-
-        cells.push({
-            offset: {
-                x: offsetComponent3d(delta.x, cellIndex),
-                y: offsetComponent3d(delta.y, cellIndex),
-                z: offsetComponent3d(delta.z, cellIndex)
-            },
-            rowIndex: cellIndex,
-            pattern: lhsPattern
-        });
-    }
-
-    return {
-        frameExpansion: "none",
-        ellipsisCount,
-        cells
-    };
-}
-
-function lowerCellPattern3D(state, rule, cell, context) {
-    const lowering = lowerCellPatternMasksShared(state, rule, cell, context, {
-        strideObj: getStrideObj(state),
-        strideMov: getStrideMov3D(state),
-        movementBits: movementBits3d(state),
-        movementMask: movementMask3d(state),
-        directionMask: directionMask3d
-    });
-    if (lowering.ellipsis)
-        return lowering;
-    const pattern = {
-        objectsPresent: maskToInt32Array(lowering.objectsPresent),
-        objectsMissing: maskToInt32Array(lowering.objectsMissing),
-        anyObjectsPresent: lowering.anyObjectsPresent.map(maskToInt32Array),
-        movementsPresent: maskToInt32Array(lowering.movementsPresent),
-        movementsMissing: maskToInt32Array(lowering.movementsMissing),
-        replacement: null
-    };
-    return {
-        ellipsis: false,
-        pattern,
-        objectsPresent: lowering.objectsPresent,
-        movementsPresent: lowering.movementsPresent,
-        objectlayers_l: lowering.objectlayers_l,
-        layersUsed_l: lowering.layersUsed_l
-    };
-}
-
-function lowerCellReplacement3D(state, rule, lhsCell, rhsCell, lhsLowering) {
-    const masks = lowerCellReplacementMasksShared(state, rule, lhsCell, rhsCell, lhsLowering, {
-        strideObj: getStrideObj(state),
-        strideMov: getStrideMov3D(state),
-        movementBits: movementBits3d(state),
-        movementMask: movementMask3d(state),
-        directionMask: directionMask3d
-    });
-    if (masks === null)
-        return null;
-    return {
-        objectsClear: maskToInt32Array(masks.objectsClear),
-        objectsSet: maskToInt32Array(masks.objectsSet),
-        movementsClear: maskToInt32Array(masks.movementsClear),
-        movementsSet: maskToInt32Array(masks.movementsSet),
-        movementsLayerMask: maskToInt32Array(masks.movementsLayerMask),
-        randomEntityMask: maskToInt32Array(masks.randomEntityMask),
-        randomDirMask: maskToInt32Array(masks.randomDirMask)
-    };
-}
-
-function ruleDirectionDelta3d(direction) {
-    if (directionDeltas3d[direction])
-        return directionDeltas3d[direction];
-    return { x: 0, y: 0, z: 0 };
-}
-
-function offsetComponent3d(delta, cellIndex) {
-    const value = delta * cellIndex;
-    return Object.is(value, -0) ? 0 : value;
-}
-
-function directionMask3d(direction) {
-    return directionBits3d[direction] || 0;
-}
-
-function movementBits3d(state) {
-    return state.MOV_BITS || 7;
-}
-
-function movementMask3d(state) {
-    return state.MOV_MASK || ((1 << movementBits3d(state)) - 1);
-}
-
-function getStrideMov3D(state) {
-    if (state.STRIDE_MOV !== undefined)
-        return state.STRIDE_MOV;
-    return Math.ceil(state.collisionLayers.length * movementBits3d(state) / 32);
-}
-
-function makeBitVec(size) {
-    return new BitVec(size);
-}
-
-function maskData(mask) {
-    return mask && mask.data ? mask.data : mask;
-}
-
-function maskToInt32Array(mask) {
-    const data = maskData(mask);
-    return new Int32Array(data || []);
-}
-
-function orMask(target, source) {
-    const targetData = maskData(target);
-    const sourceData = maskData(source);
-    if (!sourceData)
-        return;
-    for (let i = 0; i < targetData.length; i++)
-        targetData[i] |= sourceData[i] || 0;
-}
-
-function shiftOrMask(target, mask, shift) {
-    const data = maskData(target);
-    const word = shift >> 5;
-    const offset = shift & 31;
-    data[word] |= mask << offset;
-    if (offset && word + 1 < data.length)
-        data[word + 1] |= mask >>> (32 - offset);
 }
 
 function cellRowMasks(rule) {
@@ -3115,113 +2707,6 @@ function collapseRules(groups) {
     matchCache = {}; // clear match cache so we don't slowly leak memory
 }
 
-function finalizeRulesFor2D(state) {
-    rulesToMask(state);
-
-    if (debugMode) {
-        printRules(state);
-    }
-
-    arrangeRulesByGroupNumber(state);
-    collapseRules(state.rules);
-    collapseRules(state.lateRules);
-    generateRigidGroupList(state);
-    generateLoopPoints(state);
-    fixUpGosubs(state.rules, state.subroutines);
-    fixUpGosubs(state.lateRules, state.subroutines);
-}
-
-function finalizeRulesFor3D(state) {
-    rulesToMask3D(state);
-    const finalized = getRuleFinalizationApi().finalizeRuleRuntime({
-        normalRules: state.rules3d.groups || [],
-        lateRules: state.rules3d.lateGroups || [],
-        loops: state.loops || [],
-        subroutines: state.subroutines || [],
-        ruleContract: "state.rules3d",
-        isRigid: function(rule) {
-            return !!(rule && rule.rigid);
-        },
-        fixUpGosubs,
-        onError: function(message, lineNumber) {
-            logError(message, lineNumber);
-        },
-        onWarning: function(message, lineNumber) {
-            logWarning(message, lineNumber);
-        }
-    });
-    applyFinalizedRules3D(state, finalized);
-}
-
-function getRuleGroupingApi() {
-    if (typeof require === "function") {
-        try {
-            return require("./rule_grouping.js");
-        } catch (err) {
-            // Browser builds provide the API on the global object instead.
-        }
-    }
-    if (typeof RuleGrouping !== "undefined")
-        return RuleGrouping;
-    if (typeof window !== "undefined" && window.RuleGrouping)
-        return window.RuleGrouping;
-    throw new Error("RuleGrouping helper is required before compiler.js.");
-}
-
-function getRuleFinalizationApi() {
-    if (typeof require === "function") {
-        try {
-            return require("./rule_finalization.js");
-        } catch (err) {
-            // Browser builds provide the API on the global object instead.
-        }
-    }
-    if (typeof RuleFinalization !== "undefined")
-        return RuleFinalization;
-    if (typeof window !== "undefined" && window.RuleFinalization)
-        return window.RuleFinalization;
-    throw new Error("RuleFinalization helper is required before compiler.js.");
-}
-
-function getRuleLoweringApi() {
-    if (typeof require === "function") {
-        try {
-            return require("./rule_lowering.js");
-        } catch (err) {
-            // Browser builds provide the API on the global object instead.
-        }
-    }
-    if (typeof RuleLowering !== "undefined")
-        return RuleLowering;
-    if (typeof window !== "undefined" && window.RuleLowering)
-        return window.RuleLowering;
-    throw new Error("RuleLowering helper is required before compiler.js.");
-}
-
-function applyFinalizedRules3D(state, finalized) {
-    const projection = getRuleFinalizationApi().projectFinalizedRuntime(finalized, {
-        ruleContract: "state.rules3d"
-    });
-    state.rules3d.groups = projection.runtimeRules.groups;
-    state.rules3d.lateGroups = projection.runtimeRules.lateGroups;
-    state.rules3d.loopPoint = projection.runtimeRules.loopPoint;
-    state.rules3d.lateLoopPoint = projection.runtimeRules.lateLoopPoint;
-    state.rules3d.subroutines = projection.runtimeRules.subroutines;
-    state.rules3d.finalization = projection.runtimeRules.finalization;
-
-    state.rigidGroups3d = projection.rigidState.rigidGroups;
-    state.rigidGroupIndex_to_GroupIndex = projection.rigidState.rigidGroupIndexToGroupIndex;
-    state.groupNumber_to_RigidGroupIndex = projection.rigidState.groupNumberToRigidGroupIndex;
-    state.groupIndex_to_RigidGroupIndex = projection.rigidState.groupIndexToRigidGroupIndex;
-
-    const inactive2D = projection.inactive2DRuntimeProjection;
-    state.rules = inactive2D.rules;
-    state.lateRules = inactive2D.lateRules;
-    state.rigidGroups = inactive2D.rigidGroups;
-    state.loopPoint = inactive2D.loopPoint;
-    state.lateLoopPoint = inactive2D.lateLoopPoint;
-}
-
 
 
 function ruleGroupDiscardOverlappingTest(ruleGroup) {
@@ -3291,31 +2776,81 @@ function ruleGroupDiscardOverlappingTest(ruleGroup) {
 
 // split rules into late and non-late, replace 1x[rules] by 2x[groups][rules]
 function arrangeRulesByGroupNumber(state) {
-    const arranged = getRuleGroupingApi().arrangeRulesByGroupNumber(state.rules, {
-        onError: function(message, lineNumber) {
-            logError(message, lineNumber);
+    var aggregates = {};
+    var aggregates_late = {};
+    for (var i = 0; i < state.rules.length; i++) {
+        var rule = state.rules[i];
+        var targetArray = aggregates;
+        if (rule.late) {
+            targetArray = aggregates_late;
         }
-    });
-    state.rules = arranged.groups;
+
+        if (targetArray[rule.groupNumber] == undefined) {
+            targetArray[rule.groupNumber] = [];
+        }
+        targetArray[rule.groupNumber].push(rule);
+    }
+
+    var result = [];
+    for (var groupNumber in aggregates) {
+        if (aggregates.hasOwnProperty(groupNumber)) {
+            var ruleGroup = aggregates[groupNumber];
+            ruleGroupDiscardOverlappingTest(ruleGroup);
+            if (ruleGroup.length > 0) {
+                result.push(ruleGroup);
+            }
+        }
+    }
+    var result_late = [];
+    for (var groupNumber in aggregates_late) {
+        if (aggregates_late.hasOwnProperty(groupNumber)) {
+            var ruleGroup = aggregates_late[groupNumber];
+            ruleGroupDiscardOverlappingTest(ruleGroup);
+            if (ruleGroup.length > 0) {
+                result_late.push(ruleGroup);
+            }
+        }
+    }
+    state.rules = result;
 
     //check that there're no late movements with direction requirements on the lhs
-    state.lateRules = arranged.lateGroups;
+    state.lateRules = result_late;
 }
 
 function generateRigidGroupList(state) {
-    const result = getRuleFinalizationApi().buildRigidGroupState(state.rules, {
-        isRigid: function(rule) {
-            return !!(rule && rule.isRigid);
-        },
-        onError: function(message, lineNumber) {
-            logError(message, lineNumber);
-        }
-    });
+	var rigidGroupIndex_to_GroupIndex=[];
+	var groupIndex_to_RigidGroupIndex=[];
+	var groupNumber_to_GroupIndex=[];
+	var groupNumber_to_RigidGroupIndex=[];
+	var rigidGroups=[];
+	for (var i=0;i<state.rules.length;i++) {
+		var ruleset=state.rules[i];
+		var rigidFound=false;
+		for (var j=0;j<ruleset.length;j++) {
+			var rule=ruleset[j];
+			if (rule.isRigid) {
+				rigidFound=true;
+			}
+		}
+		rigidGroups[i]=rigidFound;
+		if (rigidFound) {
+			var groupNumber=ruleset[0].groupNumber;
+			groupNumber_to_GroupIndex[groupNumber]=i;
+			var rigid_group_index = rigidGroupIndex_to_GroupIndex.length;
+			groupIndex_to_RigidGroupIndex[i]=rigid_group_index;
+			groupNumber_to_RigidGroupIndex[groupNumber]=rigid_group_index;
+			rigidGroupIndex_to_GroupIndex.push(i);
+		}
+	}
+    if (rigidGroupIndex_to_GroupIndex.length > 30) {
+        var group_index = rigidGroupIndex_to_GroupIndex[30];
+        logError("There can't be more than 30 rigid groups (rule groups containing rigid members).", state.rules[group_index][0].lineNumber);
+	}
 
-	state.rigidGroups=result.rigidGroups;
-	state.rigidGroupIndex_to_GroupIndex=result.rigidGroupIndexToGroupIndex;
-	state.groupNumber_to_RigidGroupIndex=result.groupNumberToRigidGroupIndex;
-	state.groupIndex_to_RigidGroupIndex=result.groupIndexToRigidGroupIndex;
+	state.rigidGroups=rigidGroups;
+	state.rigidGroupIndex_to_GroupIndex=rigidGroupIndex_to_GroupIndex;
+	state.groupNumber_to_RigidGroupIndex=groupNumber_to_RigidGroupIndex;
+	state.groupIndex_to_RigidGroupIndex=groupIndex_to_RigidGroupIndex;
 }
 
 function getMaskFromName(state,name) {
@@ -3640,90 +3175,7 @@ function twiddleMetaData(state, command = null) {
                     logError(`Invalid color value "${colorValue}".`, 0);
                 else newmetadata.color_palette[colorName] = colorValue;
             }
-        }
-
-        parse3DCameraMetadata(newmetadata);
-    }
-
-    function parse3DCameraMetadata(newmetadata) {
-        const cameraKeys = [
-            "orthographic_camera",
-            "perspective_camera",
-            "camera_angle",
-            "camera_distance",
-            "camera_view_angle",
-            "camera_zoom"
-        ];
-        const hasCameraMetadata = cameraKeys.some(key => newmetadata[key] !== undefined);
-        if (!hasCameraMetadata)
-            return;
-
-        if (!newmetadata.three_dimensions) {
-            logWarningNoLine(`3D camera prelude settings only apply when THREE_DIMENSIONS is enabled.`);
-            for (const key of cameraKeys)
-                delete newmetadata[key];
-            return;
-        }
-
-        if (newmetadata.orthographic_camera && newmetadata.perspective_camera) {
-            logErrorNoLine(`ORTHOGRAPHIC_CAMERA and PERSPECTIVE_CAMERA cannot both be enabled.`);
-            delete newmetadata.perspective_camera;
-        }
-
-        if (newmetadata.camera_angle !== undefined) {
-            const angle = parseCameraAngle(newmetadata.camera_angle);
-            if (angle)
-                newmetadata.camera_angle = angle;
-            else
-                delete newmetadata.camera_angle;
-        }
-
-        if (newmetadata.camera_distance !== undefined) {
-            logErrorNoLine(`CAMERA_DISTANCE is not supported. Use CAMERA_ZOOM and CAMERA_VIEW_ANGLE for 3D camera framing.`);
-            delete newmetadata.camera_distance;
-        }
-
-        normalizePositive3DCameraNumber(newmetadata, "camera_zoom");
-        normalizeCameraViewAngle(newmetadata);
-    }
-
-    function parseCameraAngle(value) {
-        const args = String(value).split(/\s+/).filter(Boolean);
-        if (args.length !== 2) {
-            logErrorNoLine(`CAMERA_ANGLE expects two numeric degree arguments: camera_angle <yaw> <pitch>.`);
-            return null;
-        }
-        const yaw = parseFloat(args[0]);
-        const pitch = parseFloat(args[1]);
-        if (!Number.isFinite(yaw) || !Number.isFinite(pitch)) {
-            logErrorNoLine(`CAMERA_ANGLE arguments must be finite degree numbers.`);
-            return null;
-        }
-        return { yaw, pitch };
-    }
-
-    function normalizePositive3DCameraNumber(newmetadata, key) {
-        if (newmetadata[key] === undefined)
-            return;
-        const value = parseFloat(newmetadata[key]);
-        if (Number.isFinite(value) && value > 0) {
-            newmetadata[key] = value;
-            return;
-        }
-        logErrorNoLine(`${key.toUpperCase()} expects a positive numeric argument.`);
-        delete newmetadata[key];
-    }
-
-    function normalizeCameraViewAngle(newmetadata) {
-        if (newmetadata.camera_view_angle === undefined)
-            return;
-        const value = parseFloat(newmetadata.camera_view_angle);
-        if (Number.isFinite(value) && value > 0 && value < 180) {
-            newmetadata.camera_view_angle = value;
-            return;
-        }
-        logErrorNoLine(`CAMERA_VIEW_ANGLE expects a numeric degree argument greater than 0 and less than 180.`);
-        delete newmetadata.camera_view_angle;
+        } 
     }
 }
 
@@ -3911,16 +3363,104 @@ function removeDuplicateRules(state) {
 }
 
 function generateLoopPoints(state) {
-    const result = getRuleFinalizationApi().generateLoopPoints(state.loops || [], state.rules, state.lateRules, {
-        onError: function(message, lineNumber) {
-            logError(message, lineNumber);
-        },
-        onWarning: function(message, lineNumber) {
-            logWarning(message, lineNumber);
+    var loopPoint = {};
+    var loopPointIndex = 0;
+    var outside = true;
+    var source = 0;
+    var target = 0;
+    if (state.loops.length > 0) {
+        for (var i=0;i<state.loops.length;i++){
+            var loop = state.loops[i];
+            if (i%2===0){
+                if (loop[1]===-1){         
+                    logError("Found an ENDLOOP, but I'm not in a loop?",loop[0]);
+                }
+            } else {
+                if (loop[1]===1){         
+                    logError("Found a STARTLOOP, but I'm already inside a loop? (Puzzlescript can't nest loops, FWIW).",loop[0]);
+                }
+            }
         }
-    });
-    state.loopPoint = result.loopPoint;
-    state.lateLoopPoint = result.lateLoopPoint;
+        var lastloop=state.loops[state.loops.length-1];
+        if (lastloop[1]!==-1){
+            logError("Yo I found a STARTLOOP without a corresponding ENDLOOP.",lastloop[0]);
+
+        }
+        // logError("Have to have matching number of  'startLoop' and 'endLoop' loop points.",state.loops[state.loops.length-1][0]);
+    }
+
+    for (var j = 0; j < state.loops.length; j++) {
+        var loop = state.loops[j];
+        for (var i = 0; i < state.rules.length; i++) {
+            var ruleGroup = state.rules[i];
+
+            var firstRule = ruleGroup[0];
+            var lastRule = ruleGroup[ruleGroup.length - 1];
+
+            var firstRuleLine = firstRule.lineNumber;
+            var lastRuleLine = lastRule.lineNumber;
+
+            if (loop[0] >= firstRuleLine && loop[0] <= lastRuleLine) {
+                logWarning("Found a loop point in the middle of a rule. You probably don't want to do this, right?", loop[0]);
+            }
+            if (outside) {
+                if (firstRuleLine >= loop[0]) {
+                    target = i;
+                    outside = false;
+                    break;
+                }
+            } else {
+                if (firstRuleLine >= loop[0]) {
+                    source = i - 1;
+                    // this test can fail if there are no rules between startloop and endloop, either way
+                    if (source >= target)
+                        loopPoint[source] = target;
+                    outside = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (outside === false) {
+        var source = state.rules.length;
+        loopPoint[source] = target;
+    } else {}
+    state.loopPoint = loopPoint;
+
+    loopPoint = {};
+    outside = true;
+    for (var j = 0; j < state.loops.length; j++) {
+        var loop = state.loops[j];
+        for (var i = 0; i < state.lateRules.length; i++) {
+            var ruleGroup = state.lateRules[i];
+
+            var firstRule = ruleGroup[0];
+            var lastRule = ruleGroup[ruleGroup.length - 1];
+
+            var firstRuleLine = firstRule.lineNumber;
+            var lastRuleLine = lastRule.lineNumber;
+
+            if (outside) {
+                if (firstRuleLine >= loop[0]) {
+                    target = i;
+                    outside = false;
+                    break;
+                }
+            } else {
+                if (firstRuleLine >= loop[0]) {
+                    source = i - 1;
+                    loopPoint[source] = target;
+                    outside = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (outside === false) {
+        var source = state.lateRules.length;
+        loopPoint[source] = target;
+    } else {}
+    state.lateLoopPoint = loopPoint;
 }
 
 var soundDirectionMasks = {
@@ -3935,26 +3475,6 @@ var soundDirectionMasks = {
     '_lclick_'  :0x20,
     '_rclick_'  :0x40
 };
-
-function getSoundDirectionMasks(state) {
-    if (state && state.metadata && state.metadata.three_dimensions) {
-        return {
-            up: directionBits3d.up,
-            down: directionBits3d.down,
-            left: directionBits3d.left,
-            right: directionBits3d.right,
-            front: directionBits3d.front,
-            back: directionBits3d.back,
-            horizontal: directionBits3d.left | directionBits3d.right,
-            vertical: directionBits3d.up | directionBits3d.down,
-            orthogonal: directionBits3d.left | directionBits3d.right | directionBits3d.front | directionBits3d.back | directionBits3d.up | directionBits3d.down,
-            _action_: directionBits3d.action,
-            _lclick_: 0x80,
-            _rclick_: 0x100
-        };
-    }
-    return soundDirectionMasks;
-}
 
 function generateSoundData(state) {
     const sfx_Events = {};
@@ -3994,13 +3514,12 @@ function generateSoundData(state) {
                 logError('Incorrect sound declaration - cannot have directions (UP/DOWN/etc.) attached to non-directional sound verbs (CREATE is not directional, but MOVE is directional).', line);
 
             // construct a direction mask
-            const activeSoundDirectionMasks = getSoundDirectionMasks(state);
             let directionMask = 0;
             for (const dir of directions) {
-                if (!activeSoundDirectionMasks[dir]) 
+                if (!soundDirectionMasks[dir]) 
                     logError(`Was expecting a direction, instead found "${dir}".`, line);
                 else 
-                    directionMask |= activeSoundDirectionMasks[dir];
+                    directionMask |= soundDirectionMasks[dir];
             }
 
             // construct a list of targets, after expanding properties (if any)
@@ -4139,7 +3658,6 @@ function loadFile(str) {
     generateExtraMembers(state);
 	generateMasks(state);
 	levelsToArray(state);
-    lowerThreeDimensionLevels(state);
 	extractSections(state);
     rulesToArray(state);
     
@@ -4156,25 +3674,36 @@ function loadFile(str) {
     }
 
 	convertSectionNamesToIndices(state);
+    
+	rulesToMask(state);
 
-    if (hasThreeDimensionLevels(state))
-        finalizeRulesFor3D(state);
-    else
-        finalizeRulesFor2D(state);
+	
+	if (debugMode) {
+		printRules(state);
+	}
+
+	arrangeRulesByGroupNumber(state);
+	collapseRules(state.rules);
+	collapseRules(state.lateRules);
     if (debugSwitch.includes('rules')) console.log('Rules', state.rules);
     if (debugSwitch.includes('rules')) console.log('Late Rules', state.lateRules);
     if (debugSwitch.includes('rules')) console.log('Subroutines', state.subroutines);
 
+    generateRigidGroupList(state);
+
 	processWinConditions(state);
-    if (state.rules3d)
-        state.rules3d.winConditions = state.winconditions;
 	checkObjectsAreLayered(state);
 
 	//twiddleMetaData(state);
 	
 	generateExtraMembersPart2(state);
+
+	generateLoopPoints(state);
     if (debugSwitch.includes('rules')) console.log('Loop Points', state.loopPoint);
     if (debugSwitch.includes('rules')) console.log('Late Loop Points', state.lateLoopPoint);
+
+    fixUpGosubs(state.rules, state.subroutines);
+    fixUpGosubs(state.lateRules, state.subroutines);
     
     generateSoundData(state);
 
@@ -4201,39 +3730,14 @@ function loadFile(str) {
 }
 
 var ifrm;
-var compiledStateStartRequestId = 0;
 
 // compile a script for editor or testing, run inputs and return state if valid
 function compile(command, text, randomseed) {
-    if (command === undefined) {
-        command = ["restart"];
-    }
-    if (randomseed === undefined) {
-        randomseed = null;
-    }
-
-    return compileAndStart(command, text, randomseed);
-}
-
-function compileAndStart(command, text, randomseed) {
-    if (command === undefined) {
-        command = ["restart"];
-    }
-    if (randomseed === undefined) {
-        randomseed = null;
-    }
-
-    const compiledState = compileToState(text, randomseed, { command });
-    if (!compiledState)
-        return null;
-    return startCompiledStateAfterHostPreparation(compiledState, command, randomseed);
-}
-
-function compileToState(text, randomseed, options) {
-    const opts = options || {};
-    const command = opts.command || ["restart"];
     matchCache = {};
     forceRegenImages = true;
+    if (command === undefined) {
+        command = ["restart"];
+    }
     if (randomseed === undefined) {
         randomseed = null;
     }
@@ -4274,8 +3778,11 @@ function compileToState(text, randomseed, options) {
         return null;
     }
 
-    attachHostCapabilities(state);
     console.log(`End compile: ${state && !state.invalid && errorCount == 0 ? "ok" : "FAILED, error count = " + errorCount}`);
+
+    if (state.levels && state.levels.length === 0) {
+        logError('No levels found. Add some levels!', undefined, true);
+    }
 
     if (errorCount > 0) {
         // if (IDE===false){
@@ -4334,93 +3841,7 @@ function compileToState(text, randomseed, options) {
         }
     }
 
-    return state;
-}
-
-function attachHostCapabilities(state) {
-    state.hostCapabilities = inferHostCapabilities(state);
-    return state.hostCapabilities;
-}
-
-function inferHostCapabilities(state) {
-    const capabilities = [];
-    if (hasThreeDimensionLevels(state)) {
-        capabilities.push({
-            kind: "renderer",
-            renderer: "three3d",
-            requires: ["THREE", "webgl"],
-            owner: "graphics3d"
-        });
-    }
-    return capabilities;
-}
-
-function startCompiledStateAfterHostPreparation(state, command, randomseed) {
-    const startRequestId = ++compiledStateStartRequestId;
-    const isCurrentStartRequest = function() {
-        return startRequestId === compiledStateStartRequestId;
-    };
-    const preparation = prepareCompiledStateForHost(state);
-    if (!preparation)
-        return startCompiledState(state, command, randomseed);
-
-    return preparation.then(function() {
-        if (!isCurrentStartRequest())
-            return null;
-        return startCompiledState(state, command, randomseed);
-    }).catch(function(err) {
-        if (!isCurrentStartRequest())
-            return null;
-        reportHostPreparationError(err);
-        consoleCacheDump();
-        return null;
-    });
-}
-
-function prepareCompiledStateForHost(state) {
-    if (!state || !Array.isArray(state.hostCapabilities) || state.hostCapabilities.length === 0)
-        return null;
-
-    const capabilities = getPuzzleHostCapabilities();
-    if (!capabilities)
-        return Promise.reject(new Error("Browser playback requires a host capability preparer to be loaded."));
-    if (typeof capabilities.prepareCompiledState !== "function")
-        return Promise.reject(new Error("Browser playback host is missing prepareCompiledState()."));
-
-    return capabilities.prepareCompiledState(state);
-}
-
-function reportHostPreparationError(err) {
-    const message = err && err.message ? err.message : String(err);
-    if (typeof consoleError === "function")
-        consoleError(`<span class="systemMessage">${message}</span>`);
-    else if (typeof logErrorNoLine === "function")
-        logErrorNoLine(message, true);
-    else if (typeof console !== "undefined" && console.error)
-        console.error(message);
-}
-
-function startCompiledState(state, command, randomseed) {
-    if (command === undefined)
-        command = ["restart"];
-    if (randomseed === undefined)
-        randomseed = null;
-
-    const runtimeLevelGateMessage = getRuntimeLevelGateMessage(state);
-    const threeDimensionLevelsCanRender = hasThreeDimensionLevels(state) && canRenderThreeDimensionLevelsInBrowser();
-    const threeDimensionLevelsNeedBrowserPlaybackGate = hasThreeDimensionLevels(state) && !threeDimensionLevelsCanRender;
-    if (runtimeLevelGateMessage && !threeDimensionLevelsCanRender) {
-        logErrorNoLine(runtimeLevelGateMessage, true);
-    }
-
-    if (threeDimensionLevelsNeedBrowserPlaybackGate) {
-        consoleError(`<span class="systemMessage">${runtimeLevelGateMessage}</span>`);
-        consoleCacheDump();
-        return null;
-    }
-
     if (state) { //otherwise error
-        restoreProcessInput2DBridge();
         setGameState(state, command, randomseed);
         clearInputHistory();
     }
@@ -4472,23 +3893,4 @@ function isSitelocked() {
     }
 
     return true;
-}
-
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        loadFile,
-        lowerThreeDimensionLevels,
-        levelFromThreeDimensionParsedSource,
-        rulesToMask3D,
-        hasThreeDimensionLevels,
-        getRuntimeLevelGateMessage,
-        inferHostCapabilities,
-        attachHostCapabilities,
-        prepareCompiledStateForHost,
-        startCompiledStateAfterHostPreparation,
-        compileAndStart,
-        compileToState,
-        startCompiledState,
-        restoreProcessInput2DBridge
-    };
 }

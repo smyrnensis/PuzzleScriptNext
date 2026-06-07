@@ -40,45 +40,11 @@ function getStartScreen(texts) {
 	};
 }
 
-function getPlayableLevels(gameState) {
-	return gameState && gameState.levels || [];
-}
-
-function getPlayableLevel(gameState, levelIndex) {
-	return getPlayableLevels(gameState)[levelIndex];
-}
-
-function has3DLevelEditorTargets(gameState) {
-	const metadata = gameState && gameState.metadata;
-	if (metadata && (metadata.three_dimensions || (typeof metadata.includes === "function" && metadata.includes("three_dimensions"))))
-		return true;
-	const levels = getPlayableLevels(gameState);
-	for (let i=0;i<levels.length;i++) {
-		if (levels[i] && levels[i].is3d)
-			return true;
-	}
-	return false;
-}
-
-function resolveLevelEditorTarget(gameState, targetLevel) {
-	const levels = getPlayableLevels(gameState);
-	if (!has3DLevelEditorTargets(gameState))
-		return targetLevel;
-	if (levels[targetLevel] && levels[targetLevel].is3d)
-		return targetLevel;
-	for (let i=0;i<levels.length;i++) {
-		if (levels[i] && levels[i].is3d)
-			return i;
-	}
-	return targetLevel;
-}
-
 function getPauseScreen(state) {
-	const currentLevel = getPlayableLevel(state, curLevelNo) || {};
 	const lines = [
 		"",
 		"-< GAME PAUSED >-",
-		currentLevel.title || "",
+		state.levels[curLevelNo].title || "",
 		"",
 		"resume game",
 		!state.metadata.norestart ? "replay level from the start" : null,
@@ -155,12 +121,12 @@ function showContinueOptionOnTitleScreen(){
 }
 
 function hasStartedTheGame() {
-	return (curLevelNo>0 || curlevelTarget !== null || storage_has(document.URL+'_checkpoint')) && (curLevelNo in getPlayableLevels(state));
+	return (curLevelNo>0 || curlevelTarget !== null || storage_has(document.URL+'_checkpoint')) && (curLevelNo in state.levels);
 }
 
 function hasFinishedTheGame() {
 	return state.metadata.level_select && (solvedSections.length == state.sections.length)
-		|| curLevelNo >= getPlayableLevels(state).length;
+		|| curLevelNo >= state.levels.length; 
 }
 
 function hasSolvedAtLeastOneSection() {
@@ -199,7 +165,7 @@ function generateTitleScreen(hoverLine, scrollIncrement, selectLine) {
 
 	titleMode=showContinueOptionOnTitleScreen()?1:0;
 
-	if (getPlayableLevels(state).length===0) {
+	if (state.levels.length===0) {
 		titleImage = fillAndHighlight(getIntroScreen("Please select a game"));
 		return;
   	}
@@ -321,9 +287,8 @@ function selectPauseScreen(lineNo) {
 	const options = [
 		() => {
 			titleScreen = false;
-			const currentLevel = getPlayableLevel(state, curLevelNo) || {};
-			if (currentLevel.message) {
-				drawMessageScreen(currentLevel.message);
+			if (state.levels[curLevelNo].message) {
+				drawMessageScreen(state.levels[curLevelNo].message);
 			} else {
 				textMode = false;
 				canvasResize();
@@ -526,7 +491,7 @@ function gotoLink() {
 	if (debugSwitch.includes('load')) console.log('gotoLink()', `stack:`, linkStack);
   	if (solving) return;
 	for (const position of playerPositions) {
-		const level = getPlayableLevel(state, curLevelNo);
+		const level = state.levels[curLevelNo];
 		const objids = level.getObjects(position);
 		for (const link of state.links // use the most recent visible link definition
 				.slice(0, level.linksTop)
@@ -547,7 +512,7 @@ function gotoLink() {
 function returnLink() {
 	if (debugSwitch.includes('load')) console.log('returnLink()', `stack:`, linkStack);
 	const linkEntry = linkStack.pop();
-	const level = getPlayableLevel(state, linkEntry.backup.levelNo);
+	const level = state.levels[linkEntry.backup.levelNo];
 	backups = backups.slice(0, linkEntry.backupTop);
 	if (verbose_logging)
 		consolePrint(`Returning to level ${linkEntry.backup.levelNo} (${htmlJump(level.lineNumber)}).`, true, level.lineNumber);
@@ -684,53 +649,31 @@ function drawMessageScreen(message) {
 
 var loadedLevelSeed=0;
 
-function getPuzzle3DPlayableHost() {
-	if (typeof Puzzle3DPlayHost !== "undefined")
-		return Puzzle3DPlayHost;
-	if (typeof window !== "undefined" && window.Puzzle3DPlayHost)
-		return window.Puzzle3DPlayHost;
-	if (typeof globalThis !== "undefined" && globalThis.Puzzle3DPlayHost)
-		return globalThis.Puzzle3DPlayHost;
-	return null;
+function getExternalPlayableHosts() {
+	if (typeof PuzzleExternalPlayableHosts !== "undefined")
+		return PuzzleExternalPlayableHosts;
+	if (typeof window !== "undefined" && window.PuzzleExternalPlayableHosts)
+		return window.PuzzleExternalPlayableHosts;
+	if (typeof globalThis !== "undefined" && globalThis.PuzzleExternalPlayableHosts)
+		return globalThis.PuzzleExternalPlayableHosts;
+	return [];
 }
 
-function isCurrentLevel3D() {
-	return !!(curLevel && curLevel.is3d);
-}
-
-function currentPlayableLevelDescriptor3D(leveldat) {
-	return {
-		is3d: true,
-		width: leveldat.width,
-		height: leveldat.height,
-		depth: leveldat.depth,
-		title: leveldat.title,
-		section: leveldat.section,
-		lineNumber: leveldat.lineNumber
-	};
-}
-
-function loadPlayableLevel3D(state, leveldat, randomseed, clearinputhistory) {
-	const host = getPuzzle3DPlayableHost();
-	if (!host || typeof host.startPlayableLevel !== "function")
-		throw new Error("3D level playback requires Puzzle3DPlayHost.startPlayableLevel().");
-	curLevel = currentPlayableLevelDescriptor3D(leveldat);
-	if (!host.startPlayableLevel(state, curLevelNo, {
-		randomseed: randomseed,
-		clearInputHistory: clearinputhistory === true
-	}))
-		throw new Error("3D level playback host was not ready.");
-}
-
-function openLevelEditor3D(state, leveldat, randomseed) {
-	const host = getPuzzle3DPlayableHost();
-	if (!host || typeof host.openLevelEditor !== "function")
-		throw new Error("3D level editor requires Puzzle3DPlayHost.openLevelEditor().");
-	curLevel = currentPlayableLevelDescriptor3D(leveldat);
-	if (!host.openLevelEditor(state, curLevelNo, {
-		randomseed: randomseed
-	}))
-		throw new Error("3D level editor host was not ready.");
+function loadExternalPlayableLevelFromLevelDat(state, leveldat, randomseed, clearinputhistory) {
+	const hosts = getExternalPlayableHosts();
+	for (let i = 0; i < hosts.length; i++) {
+		const host = hosts[i];
+		if (!host || typeof host.canPlayLevel !== "function" || !host.canPlayLevel(state, leveldat))
+			continue;
+		if (typeof host.startPlayableLevel !== "function")
+			throw new Error("External playable host is missing startPlayableLevel().");
+		host.startPlayableLevel(state, curLevelNo, {
+			randomseed,
+			clearInputHistory: clearinputhistory
+		});
+		return true;
+	}
+	return false;
 }
 
 // workhorse to load and setup a new level
@@ -769,20 +712,19 @@ function loadLevelFromLevelDat(state,leveldat,randomseed,clearinputhistory) {
 		messageselected = false;
       	canvasResize();
       	clearInputHistory();
-    } else if (leveldat.target != undefined) {  // could be zero
+	} else if (leveldat.target != undefined) {  // could be zero
 		if (verbose_logging)
 			consolePrint(`GOTO (${htmlJump(leveldat.lineNumber)})`, true, leveldat.lineNumber);
-      	// This "level" is actually a goto.
-      	//tryPlayGotoSound();
-		setSectionSolved((getPlayableLevel(state, curLevelNo) || {}).section)
-      	gotoLevel(leveldat.target);
+	  	// This "level" is actually a goto.
+	  	//tryPlayGotoSound();
+	  	setSectionSolved(state.levels[curLevelNo].section)
+	  	gotoLevel(leveldat.target);
+	} else if (loadExternalPlayableLevelFromLevelDat(state, leveldat, randomseed, clearinputhistory)) {
+		// External hosts own only the playable payload. Browser flow stays here.
+		twiddleMetadataExtras();
     } else {
       	titleMode=0;
       	textMode=false;
-		if (leveldat.is3d) {
-			loadPlayableLevel3D(state, leveldat, randomseed, clearinputhistory);
-			return;
-		}
     	curLevel = leveldat.clone();
 		if (verbose_logging)
 			consolePrint(`Loading "${leveldat.section || leveldat.title}" (${htmlJump(leveldat.lineNumber)}).`, true, leveldat.lineNumber);  //todo:
@@ -832,11 +774,11 @@ function loadLevelFromLevelDat(state,leveldat,randomseed,clearinputhistory) {
 	}
 }
 
-function loadLevelFromStateTarget(state,levelindex,target,randomseed) {
+function loadLevelFromStateTarget(state,levelindex,target,randomseed) { 
 	if (debugSwitch.includes('load')) console.log(`loadLevelFromStateTarget(${levelindex},${target})`);
-    var leveldat = target;
+    var leveldat = target;    
 	if (verbose_logging)
-		consolePrint(`Returning to checkpoint in "${getPlayableLevel(state, levelindex).section || getPlayableLevel(state, levelindex).title}".`);
+		consolePrint(`Returning to checkpoint in "${state.levels[levelindex].section || state.levels[levelindex].title}".`); 
   	curLevelNo=levelindex;
   	curlevelTarget=target;
     if (leveldat.message===undefined) {
@@ -847,14 +789,14 @@ function loadLevelFromStateTarget(state,levelindex,target,randomseed) {
 			tryPlayStartLevelSound();     
 		}
     }
-    loadLevelFromLevelDat(state,getPlayableLevel(state, levelindex),randomseed);
+    loadLevelFromLevelDat(state,state.levels[levelindex],randomseed);
     restoreLevel(target, true);
     restartTarget=target;
 }
 
-function loadLevelFromState(state,levelindex,randomseed) {
+function loadLevelFromState(state,levelindex,randomseed) {  
 	if (debugSwitch.includes('load')) console.log(`loadLevelFromState(levelindex=${levelindex})`);
-	var leveldat = getPlayableLevel(state, levelindex);
+	var leveldat = state.levels[levelindex];    
 	curLevelNo=levelindex;
 	curlevelTarget=null;
     if (leveldat!==undefined && leveldat.message===undefined) {
@@ -1061,7 +1003,7 @@ function setGameState(_state, command, randomseed) {
 	if (command === undefined) {
 		command = ["restart"];
 	}
-	if ((getPlayableLevels(state).length === 0 || getPlayableLevels(_state).length === 0) && command.length > 0 && command[0] === "rebuild") {
+	if ((state.levels.length === 0 || _state.levels.length === 0) && command.length > 0 && command[0] === "rebuild") {
 		command = ["restart"];
 	}
 	if (randomseed === undefined) {
@@ -1132,9 +1074,8 @@ function setGameState(_state, command, randomseed) {
 			break;
 		}
 		case "loadFirstNonMessageLevel":{
-			const levels = getPlayableLevels(state);
-			for (var i=0;i<levels.length;i++){
-				if (levels[i].message){
+			for (var i=0;i<state.levels.length;i++){
+				if (state.levels[i].message){
 					continue;
 				}
 				var targetLevel = i;
@@ -1171,36 +1112,11 @@ function setGameState(_state, command, randomseed) {
 			loadLevelFromState(state,targetLevel,randomseed);
 			break;
 		}
-		case "loadLevelEditor":
-		{
-			var targetLevel = resolveLevelEditorTarget(state, command[1]);
-			curLevelNo=targetLevel;
-			curlevelTarget=null;
-		    winning=false;
-		    timer=0;
-		    titleScreen=false;
-		    textMode=false;
-		    titleSelected=false;
-		    quittingMessageScreen=false;
-		    quittingTitleScreen=false;
-		    titleMode = 0;
-			showLayers = false;
-			var leveldat = getPlayableLevel(state,targetLevel);
-			if (leveldat && leveldat.is3d) {
-				openLevelEditor3D(state,leveldat,randomseed);
-				break;
-			}
-			loadLevelFromState(state,targetLevel,randomseed);
-			levelEditorOpened=true;
-			canvasResize();
-			break;
-		}
 		case "levelline":
 		{
 			var targetLine = command[1];
-			const levels = getPlayableLevels(state);
-			for (var i=levels.length-1;i>=0;i--) {
-				var level= levels[i];
+			for (var i=state.levels.length-1;i>=0;i--) {
+				var level= state.levels[i];
 				if(level.lineNumber<=targetLine+1) {
 					curLevelNo=i;
 					curlevelTarget=null;
@@ -1345,7 +1261,7 @@ function restoreLevel(lev, snapCamera, resetTween = true, resetAutoTick = true) 
 	const switchLevel = lev.levelNo >= 0 && lev.levelNo != curLevelNo;
 	if (switchLevel) {
 		curLevelNo = lev.levelNo;
-		curLevel = getPlayableLevel(state, curLevelNo).clone();
+		curLevel = state.levels[curLevelNo].clone();
 	}
 
 	if (diffing){
@@ -1492,11 +1408,6 @@ function DoRestart(force) {
 	if (force!==true && ('norestart' in state.metadata)) {
 		return;
 	}
-	if (isCurrentLevel3D()) {
-		const host = getPuzzle3DPlayableHost();
-		if (host && typeof host.handleSessionCommand === "function")
-			return host.handleSessionCommand("restart");
-	}
 	if (againing){
 		DoUndo(force,true);
 	}
@@ -1546,12 +1457,6 @@ function backupDiffers(){
 function DoUndo(force,ignoreDuplicates, resetTween = true, resetAutoTick = true, forceSFX = false) {
   if ((!levelEditorOpened)&&('noundo' in state.metadata && force!==true)) {
     return;
-  }
-
-  if (isCurrentLevel3D()) {
-	const host = getPuzzle3DPlayableHost();
-	if (host && typeof host.handleSessionCommand === "function")
-		return host.handleSessionCommand("undo");
   }
 
   if (ignoreDuplicates){
@@ -1628,16 +1533,6 @@ var dirMasksDelta = {
 	64: [0, 0]
 };
 
-var direction3Deltas = {
-	left: [-1, 0, 0],
-	right: [1, 0, 0],
-	front: [0, 0, -1],
-	back: [0, 0, 1],
-	up: [0, -1, 0],
-	down: [0, 1, 0],
-	no: [0, 0, 0]
-};
-
 // utility functions
 function getObject(objid) {
 	return state.objects[state.idDict[objid]];
@@ -1650,20 +1545,7 @@ function getLayerMovement(movmask, layer) {
 
 // update position index by x and y
 function deltaPositionIndex(level, positionIndex, x, y) {
-	return deltaPositionIndex3(level, positionIndex, x, y, 0);
-}
-
-function deltaPositionIndex3(level, positionIndex, x, y, z) {
-	const depth = level.depth || 1;
-	return positionIndex + z + y * depth + x * level.height * depth;
-}
-
-function getDirectionDelta3(direction) {
-	if (Array.isArray(direction))
-		return direction;
-	if (typeof direction === 'string' && direction3Deltas[direction] !== undefined)
-		return direction3Deltas[direction];
-	return null;
+	return positionIndex + y + x * level.height;
 }
 
 function getPlayerPositions() {
@@ -1748,7 +1630,31 @@ function repositionEntitiesOnLayer(positionIndex,layer,dirMask)
         return false;
     }
 
-	processMovementSfx2D(positionIndex, layer, sourceMask, curLevel.getMovements(positionIndex));
+	// for each sound movement event, which applies to a single object and layer
+	for (let i=0;i<state.sfx_MovementMasks[layer].length;i++) {
+		const fx = state.sfx_MovementMasks[layer][i];
+		if (sourceMask.get(fx.objId)) {
+      		var movementMask = curLevel.getMovements(positionIndex);
+      		var directionMask = fx.directionMask;
+			// does it match any movement at this location?
+      		if (movementMask.anyBitsInCommon(directionMask)) {  // bug: two objects at location can cause false trigger
+    			if (verbose_logging) 
+					consolePrint(`Object "${state.idDict[fx.objId]}" has moved, playing seed "${fx.seed}".`)
+				if (fx.seed.startsWith('afx')) {
+					const object = getObject(fx.objId);
+					const move = getLayerMovement(movementMask, object.layer);
+					const position = deltaPositionIndex(curLevel, positionIndex, dirMasksDelta[move][0], dirMasksDelta[move][1])
+					seedsToAnimate[position+','+fx.objId] = { 
+						kind: 'move', 
+						seed: fx.seed, 
+						dir: move 
+					};
+				}
+				else if (seedsToPlay_CanMove.indexOf(fx.seed)===-1)
+					seedsToPlay_CanMove.push(fx.seed);
+      		}
+    	}
+  	}
 
     var movingEntities = sourceMask.clone();
     sourceMask.iclear(layerMask);
@@ -1797,14 +1703,11 @@ function repositionEntitiesAtCell(positionIndex, dontModify) {
 }
 
 
-function Level(lineNumber, width, height, layerCount, objects, section, options) {
-	const opts = options || {};
+function Level(lineNumber, width, height, layerCount, objects, section) {
 	this.lineNumber = lineNumber;
 	this.width = width;
 	this.height = height;
-	this.depth = opts.depth || 1;
-	this.is3d = !!opts.is3d || this.depth !== 1;
-	this.n_tiles = width * height * this.depth;
+	this.n_tiles = width * height;
 	this.objects = objects;
 	this.section = section;
 	this.layerCount = layerCount;
@@ -1815,22 +1718,11 @@ function Level(lineNumber, width, height, layerCount, objects, section, options)
 Level.prototype.delta_index = function(direction)
 {
 	const [dx, dy] = dirMasksDelta[direction]
-	return deltaPositionIndex3(this, 0, dx, dy, 0)
-}
-
-Level.prototype.delta_index3 = function(direction)
-{
-	const delta = getDirectionDelta3(direction);
-	if (delta == null)
-		return null;
-	return deltaPositionIndex3(this, 0, delta[0], delta[1], delta[2]);
+	return dx*this.height + dy
 }
 
 Level.prototype.clone = function() {
-	var clone = new Level(this.lineNumber, this.width, this.height, this.layerCount, null, this.section, {
-		depth: this.depth,
-		is3d: this.is3d
-	});
+	var clone = new Level(this.lineNumber, this.width, this.height, this.layerCount, null, this.section);
 	clone.objects = new Int32Array(this.objects);
 	return clone;
 }
@@ -2271,29 +2163,22 @@ CellPattern.prototype.generateMatchString = function() {
 }
 
 CellPattern.prototype.generateMatchFunction = function() {
-	var cellMasksApi = getCellMasksApi2D();
-	var pattern = this;
-	return function(i, objects, movements) {
-		return cellMasksApi.matchesCellAt(i, objects, movements, pattern, {
-			strideObj: STRIDE_OBJ,
-			strideMov: STRIDE_MOV
-		});
-	};
-}
-
-function getCellMasksApi2D() {
-	if (typeof require === "function") {
-		try {
-			return require("./cell_masks.js");
-		} catch (err) {
-			// Browser builds provide the API on the global object instead.
-		}
+	var i;
+	var fn = '';
+	var mul = STRIDE_OBJ === 1 ? '' : '*'+STRIDE_OBJ;	
+	for (var i = 0; i < STRIDE_OBJ; ++i) {
+		fn += '\tvar cellObjects' + i + ' = objects[i' + mul + (i ? '+'+i: '') + '];\n';
 	}
-	if (typeof CellMasks !== "undefined")
-		return CellMasks;
-	if (typeof window !== "undefined" && window.CellMasks)
-		return window.CellMasks;
-	throw new Error("CellMasks helper is required before engine.js.");
+	mul = STRIDE_MOV === 1 ? '' : '*'+STRIDE_MOV;
+	for (var i = 0; i < STRIDE_MOV; ++i) {
+		fn += '\tvar cellMovements' + i + ' = movements[i' + mul + (i ? '+'+i: '') + '];\n';
+	}
+	fn += "return " + this.generateMatchString()+';';
+	if (fn in matchCache) {
+		return matchCache[fn];
+	}
+	//console.log(fn.replace(/\s+/g, ' '));
+	return matchCache[fn] = new Function("i", "objects", "movements", fn);
 }
 
 var _o1,_o2,_o2_5,_o3,_o4,_o5,_o6,_o7,_o8,_o9,_o10,_o11,_o12;
@@ -2316,50 +2201,62 @@ CellPattern.prototype.replace = function(rule, currentIndex) {
   var movementsClear = replace.movementsClear.cloneInto(_m2);
   movementsClear.ior(replace.movementsLayerMask);
 
+  if (!replace_RandomEntityMask.iszero()) {
+    var choices=[];
+    for (var i=0;i<32*STRIDE_OBJ;i++) {
+      if (replace_RandomEntityMask.get(i)) {
+        choices.push(i);
+      }
+    }
+    var rand = choices[Math.floor(RandomGen.uniform() * choices.length)];
+    var n = state.idDict[rand];
+    var o = state.objects[n];
+    objectsSet.ibitset(rand);
+    objectsClear.ior(state.layerMasks[o.layer]);
+    movementsClear.ishiftor(MOV_MASK, MOV_BITS * o.layer);
+  }
+  if (!replace_RandomDirMask.iszero()) {
+    for (var layerIndex=0;layerIndex<curLevel.layerCount;layerIndex++){
+      if (replace_RandomDirMask.get(MOV_BITS * layerIndex)) {
+        var randomDir = Math.floor(RandomGen.uniform()*4);
+        movementsSet.ibitset(randomDir + MOV_BITS * layerIndex);
+      }
+    }
+  }
+  
   var curCellMask = curLevel.getCellInto(currentIndex,_o2_5);
   var curMovementMask = curLevel.getMovements(currentIndex);
 
   var oldCellMask = curCellMask.cloneInto(_o3);
   var oldMovementMask = curMovementMask.cloneInto(_m3);
 
-  getCellMasksApi2D().applyCellReplacementMasks(curCellMask, curMovementMask, {
-    objectsClear: objectsClear,
-    objectsSet: objectsSet,
-    movementsClear: movementsClear,
-    movementsSet: movementsSet,
-    randomEntityMask: replace_RandomEntityMask,
-    randomDirMask: replace_RandomDirMask
-  }, {
-    strideObj: STRIDE_OBJ,
-    layerCount: curLevel.layerCount,
-    movementBits: MOV_BITS,
-    movementMask: MOV_MASK,
-    directionCount: 4,
-    uniform: function() { return RandomGen.uniform(); },
-    idDict: state.idDict,
-    objects: state.objects,
-    layerMasks: state.layerMasks
-  });
+  curCellMask.iclear(objectsClear);
+  curCellMask.ior(objectsSet);
+
+  curMovementMask.iclear(movementsClear);
+  curMovementMask.ior(movementsSet);
 
   var rigidchange=false;
   var curRigidGroupIndexMask =0;
   var curRigidMovementAppliedMask =0;
   if (rule.isRigid) {
-    var rigidResult = getCellMasksApi2D().applyRigidReplacementMasks(
-      curLevel.rigidGroupIndexMask[currentIndex],
-      curLevel.rigidMovementAppliedMask[currentIndex],
-      replace,
-      {
-        isRigid: true,
-        rigidGroupIndex: state.groupNumber_to_RigidGroupIndex[rule.groupNumber],
-        layerCount: curLevel.layerCount,
-        movementBits: MOV_BITS,
-        strideMov: STRIDE_MOV
-      }
-    );
-    rigidchange = rigidResult.changed;
-    curRigidGroupIndexMask = new BitVec(rigidResult.groupMask);
-    curRigidMovementAppliedMask = new BitVec(rigidResult.appliedMask);
+    var rigidGroupIndex = state.groupNumber_to_RigidGroupIndex[rule.groupNumber];
+    rigidGroupIndex++;//don't forget to -- it when decoding :O
+    var rigidMask = new BitVec(STRIDE_MOV);
+    for (var layer = 0; layer < curLevel.layerCount; layer++) {
+      rigidMask.ishiftor(rigidGroupIndex, MOV_BITS * layer);
+    }
+    rigidMask.iand(replace.movementsLayerMask);
+    curRigidGroupIndexMask = curLevel.rigidGroupIndexMask[currentIndex] || new BitVec(STRIDE_MOV);
+    curRigidMovementAppliedMask = curLevel.rigidMovementAppliedMask[currentIndex] || new BitVec(STRIDE_MOV);
+
+    if (!rigidMask.bitsSetInArray(curRigidGroupIndexMask.data) &&
+      !replace.movementsLayerMask.bitsSetInArray(curRigidMovementAppliedMask.data) ) {
+      curRigidGroupIndexMask.ior(rigidMask);
+      curRigidMovementAppliedMask.ior(replace.movementsLayerMask);
+      rigidchange=true;
+
+    }
   }
 
   var result = false;
@@ -2818,231 +2715,127 @@ Rule.prototype.tryApply = function(level) {
 };
 
 Rule.prototype.queueCommands = function() {
-	var commandQueueApi = getCommandQueueApi2D();
-	var commandState = commandQueueApi.createCommandState({
-		queue: curLevel.commandQueue,
-		sourceRules: curLevel.commandQueueSourceRules,
-		messageText: messagetext,
-		statusText: statusText,
-		gosubTarget: gosubTarget
-	});
+	var commands = this.commands;
+	perfCounters.commands += commands.length;	
+	if (commands.length==0){
+		return;
+	}
 
-	commandQueueApi.queueCommands(commandState, this, {
-		onCommandCount: function(count) {
-			perfCounters.commands += count;
-		},
-		onLog: function(message, rule) {
-			consolePrintFromRule(`${message}`, rule, true);
-		},
-		onQueued: function(command, rule) {
-			handleQueuedCommand2D(command, rule);
-		}
-	});
-
-	curLevel.commandQueue = commandState.queue;
-	curLevel.commandQueueSourceRules = commandState.sourceRules;
-	messagetext = commandState.messageText;
-	statusText = commandState.statusText;
-	gosubTarget = commandState.gosubTarget;
-};
-
-function getCommandQueueApi2D() {
-	if (typeof require === "function") {
-		try {
-			return require("./command_queue.js");
-		} catch (err) {
-			// Browser builds provide the API on the global object instead.
+	//commandQueue is an array of strings, message.commands is an array of array of strings (For messagetext parameter), so I search through them differently
+	var preexisting_cancel=curLevel.commandQueue.indexOf("cancel")>=0;
+	var preexisting_restart=curLevel.commandQueue.indexOf("restart")>=0;
+	
+	var currule_cancel = false;
+	var currule_restart = false;
+	for (var i=0;i<commands.length;i++){
+		var cmd = commands[i][0];
+		if (cmd==="cancel"){
+			currule_cancel=true;
+		} else if (cmd==="restart"){
+			currule_restart=true;
 		}
 	}
-	if (typeof CommandQueue !== "undefined")
-		return CommandQueue;
-	if (typeof window !== "undefined" && window.CommandQueue)
-		return window.CommandQueue;
-	throw new Error("CommandQueue helper is required before engine.js.");
-}
 
-function getRandomRuleGroupsApi2D() {
-	if (typeof require === "function") {
-		try {
-			return require("./random_rule_groups.js");
-		} catch (err) {
-			// Browser builds provide the API on the global object instead.
-		}
+	//priority cancel > restart > everything else
+	//if cancel is the queue from other rules, ignore everything
+	if (preexisting_cancel){
+		return;
 	}
-	if (typeof RandomRuleGroups !== "undefined")
-		return RandomRuleGroups;
-	if (typeof window !== "undefined" && window.RandomRuleGroups)
-		return window.RandomRuleGroups;
-	throw new Error("RandomRuleGroups helper is required before engine.js.");
-}
-
-function getRuleGroupsApi2D() {
-	if (typeof require === "function") {
-		try {
-			return require("./rule_groups.js");
-		} catch (err) {
-			// Browser builds provide the API on the global object instead.
-		}
+	//if restart is in the queue from other rules, only apply if there's a cancel present here
+	if (preexisting_restart && !currule_cancel){
+		return;
 	}
-	if (typeof RuleGroups !== "undefined")
-		return RuleGroups;
-	if (typeof window !== "undefined" && window.RuleGroups)
-		return window.RuleGroups;
-	throw new Error("RuleGroups helper is required before engine.js.");
-}
 
-function processSessionCommandArtifacts2D(commands) {
-	return getCommandQueueApi2D().collectSessionArtifacts({
-		queue: commands || curLevel.commandQueue,
-		messageText: messagetext,
-		statusText: statusText,
-		gosubTarget: gosubTarget,
-		logs: []
-	});
-}
-
-function getSfxArtifactsApi2D() {
-	if (typeof require === "function") {
-		try {
-			return require("./sfx_artifacts.js");
-		} catch (err) {
-			// Browser builds provide the API on the global object instead.
-		}
+	//if you are writing a cancel or restart, clear the current queue
+	if (currule_cancel || currule_restart){
+		curLevel.commandQueue=[];
+        curLevel.commandQueueSourceRules=[];
+		messagetext="";
+		statusText = "";
 	}
-	if (typeof SfxArtifacts !== "undefined")
-		return SfxArtifacts;
-	if (typeof window !== "undefined" && window.SfxArtifacts)
-		return window.SfxArtifacts;
-	throw new Error("SfxArtifacts helper is required before engine.js.");
-}
 
-function processTurnSfx2D() {
-	var sfxArtifacts = getSfxArtifactsApi2D().collectSfxArtifacts({
-		canMoveSeeds: seedsToPlay_CanMove,
-		cantMoveSeeds: seedsToPlay_CantMove,
-		animations: seedsToAnimate,
-		creationMasks: state.sfx_CreationMasks,
-		destructionMasks: state.sfx_DestructionMasks,
-		createMask: sfxCreateMask,
-		destroyMask: sfxDestroyMask,
-		createList: sfxCreateList,
-		destroyList: sfxDestroyList
-	});
-	seedsToAnimate = sfxArtifacts.animations;
-	if (verbose_logging) {
-		for (var j=0;j<sfxArtifacts.objectEvents.length;j++) {
-			var event = sfxArtifacts.objectEvents[j];
-			var verb = event.kind === "create" ? "Created" : "Destroyed";
-			consolePrint(`${verb} object "${state.idDict[event.objId]}", playing seed "${event.seed}"`);
+	for(var i=0;i<commands.length;i++) {
+		var command=commands[i];
+		var already=false;
+		if (command[0] == 'log') {		// log is not queued
+			consolePrintFromRule(`${command[1]}`, this, true);
+			continue;
+		} else if (curLevel.commandQueue.indexOf(command[0])>=0) {
+			continue;
+		} else if (command[0] == 'gosub') {			// gosub is not queued
+			gosubTarget = command[1];
+			continue;
 		}
-	}
-	for (var i=0;i<sfxArtifacts.playSeeds.length;i++) {
-		playSeed(sfxArtifacts.playSeeds[i]);
-	}
-	return sfxArtifacts;
-}
+		curLevel.commandQueue.push(command[0]);
+		curLevel.commandQueueSourceRules.push(this);
 
-function processMovementSfx2D(positionIndex, layer, sourceMask, movementMask) {
-	return getSfxArtifactsApi2D().recordMovementSfx({
-		entries: state.sfx_MovementMasks[layer],
-		sourceMask: sourceMask,
-		movementMask: movementMask,
-		canMoveSeeds: seedsToPlay_CanMove,
-		animations: seedsToAnimate,
-		movementMaskValue: MOV_MASK,
-		movementBits: MOV_BITS,
-		objectLayerForId: function(objId) {
-			return getObject(objId).layer;
-		},
-		animationPosition: function(fx, move) {
-			return deltaPositionIndex(curLevel, positionIndex, dirMasksDelta[move][0], dirMasksDelta[move][1]);
-		},
-		onLog: function(fx) {
-			if (verbose_logging)
-				consolePrint(`Object "${state.idDict[fx.objId]}" has moved, playing seed "${fx.seed}".`);
+		if (verbose_logging) {
+			const inspect_ID =  addToDebugTimeline(curLevel, this.lineNumber);
+			const logString = htmlColor('green', `Rule ${htmlJump(this.lineNumber)} triggers command ${command[0]}.`);
+			consolePrint(logString, false, this.lineNumber, inspect_ID);
 		}
-	});
-}
 
-function processCantMoveSfx2D(positionIndex, cellMask, movementMask) {
-	return getSfxArtifactsApi2D().recordCantMoveSfx({
-		entries: state.sfx_MovementFailureMasks,
-		cellMask: cellMask,
-		movementMask: movementMask,
-		cantMoveSeeds: seedsToPlay_CantMove,
-		animations: seedsToAnimate,
-		positionIndex: positionIndex,
-		movementMaskValue: MOV_MASK,
-		movementBits: MOV_BITS,
-		objectLayerForId: function(objId) {
-			return getObject(objId).layer;
-		},
-		onLog: function(fx) {
-			if (verbose_logging) {
-				var object = getObject(fx.objId);
-				consolePrint(`Object "${state.idDict[object]}" can't move, playing seed "${seedsToPlay_CantMove[positionIndex]}"`);
+		if (command[0] == 'message') {
+			messagetext=command[1];
+		} else if (command[0] == 'goto') {
+			curLevel.commandQueue.pop();
+			curLevel.commandQueue.push(`${command[0]},${command[1]}`);
+		} else if (command[0] == 'status') {
+			statusText = command[1];
+		}		
+
+		if (state.metadata.runtime_metadata_twiddling && twiddleable_params.includes(command[0])) {
+
+			value = command[1];
+
+			if (value == "wipe") {
+				delete state.metadata[command[0]]; //value = undefined;
+				value = null;
+			} else if (value == "default") {
+				value = deepClone(state.default_metadata[command[0]]);
 			}
-		}
-	});
-}
 
-function handleQueuedCommand2D(command, rule) {
-	if (verbose_logging) {
-		const inspect_ID =  addToDebugTimeline(curLevel, rule.lineNumber);
-		const logString = htmlColor('green', `Rule ${htmlJump(rule.lineNumber)} triggers command ${command[0]}.`);
-		consolePrint(logString, false, rule.lineNumber, inspect_ID);
-	}
-
-	if (state.metadata.runtime_metadata_twiddling && twiddleable_params.includes(command[0])) {
-		var value = command[1];
-
-		if (value == "wipe") {
-			delete state.metadata[command[0]]; //value = undefined;
-			value = null;
-		} else if (value == "default") {
-			value = deepClone(state.default_metadata[command[0]]);
-		}
-
-		if (value != null) {
-			state.metadata[command[0]] = value;
-		}
-
-		if (command[0] === "zoomscreen" || command[0] === "flickscreen") {
-			//twiddleMetaData(state, true);
-			twiddleMetaData(state, command);
-			canvasResize();
-		}
-
-		if (command[0] === "smoothscreen") {
-			if (value !== undefined) {
+			if (value != null) {
+				state.metadata[command[0]] = value;
+			}
+			
+			if (command[0] === "zoomscreen" || command[0] === "flickscreen") {
 				//twiddleMetaData(state, true);
 				twiddleMetaData(state, command);
-				initSmoothCamera()
-			} else {
-				smoothscreen = false;
+				canvasResize();
 			}
-			canvasResize();
-		}
 
-		if (command[0] == "color_palette") {
-			//twiddleMetaData(state, true);
-			twiddleMetaData(state, command);
-			regenSpriteImages()
-			canvasResize();
-		}
-
-		twiddleMetadataExtras()
-
-		if (state.metadata.runtime_metadata_twiddling_debug) {
-			var log = "Metadata twiddled: Flag "+command[0] + " set to " + value;
-			if (value != command[1]) {
-				log += " ("+command[1]+")"
+			if (command[0] === "smoothscreen") {
+				if (value !== undefined) {
+					//twiddleMetaData(state, true);
+					twiddleMetaData(state, command);
+					initSmoothCamera()
+				} else {
+					smoothscreen = false;
+				}
+				canvasResize();
 			}
-			consolePrintFromRule(log,rule,true);
-			canvasResize();
-		}
-	}
-}
+
+			if (command[0] == "color_palette") {
+				//twiddleMetaData(state, true);
+				twiddleMetaData(state, command);
+				regenSpriteImages()
+				canvasResize();
+			}
+
+			twiddleMetadataExtras()
+
+			if (state.metadata.runtime_metadata_twiddling_debug) {
+				var log = "Metadata twiddled: Flag "+command[0] + " set to " + value;
+				if (value != command[1]) {
+					log += " ("+command[1]+")"
+				}
+				consolePrintFromRule(log,this,true);
+				canvasResize();
+			}
+    	}   
+  	}
+};
 
 // set various prelude settings from metadata, either initially or when twiddled
 function twiddleMetadataExtras(resetAutoTick = true) {
@@ -3078,77 +2871,187 @@ if (solving) {return;}
 }
 
 function processOutputCommands(commands) {
-	var artifacts = processSessionCommandArtifacts2D(commands);
-	for (var i=0;i<artifacts.simpleSoundCommands.length;i++) {
-		tryPlaySimpleSound(artifacts.simpleSoundCommands[i]);
+	for (var i=0;i<commands.length;i++) {
+		var command = commands[i];
+		if (command.charAt(1)==='f')  {//identifies sfxN
+			tryPlaySimpleSound(command);
+		}
+		if (unitTesting===false) {
+			if (command == 'message') {
+				showTempMessage(messagetext);
+			}
+		}
 	}
-	if (unitTesting===false && artifacts.messageRequested) {
-		showTempMessage(artifacts.messageText);
-	}
-	return artifacts;
 }
 
 function applyRandomRuleGroup(level,ruleGroup) {
 	perfCounters.randoms++;
-	return getRandomRuleGroupsApi2D().applyRandomRuleGroup(level, ruleGroup, {
-		uniform: function() { return RandomGen.uniform(); },
-		generateTuples: generateTuples
-	});
+	var propagated=false;
+
+	var matches=[];
+	for (var ruleIndex=0;ruleIndex<ruleGroup.length;ruleIndex++) {
+		var rule=ruleGroup[ruleIndex];
+		var ruleMatches = rule.findMatches();
+		if (ruleMatches.length>0) {
+	    	var tuples  = generateTuples(ruleMatches);
+	    	for (var j=0;j<tuples.length;j++) {
+	    		var tuple=tuples[j];
+				matches.push([ruleIndex,tuple]);
+	    	}
+		}		
+	}
+
+  if (matches.length===0)
+  {
+    return false;
+  } 
+
+	var match = matches[Math.floor(RandomGen.uniform()*matches.length)];
+	var ruleIndex=match[0];
+	var rule=ruleGroup[ruleIndex];
+	var tuple=match[1];
+	var check=false;
+	const delta = level.delta_index(rule.direction)
+	var modified = rule.applyAt(level,tuple,check,delta);
+
+    rule.queueCommands();
+
+  return modified;
 }
 
 
 function applyRuleGroup(ruleGroup) {
 	perfCounters.groups++;
-	return getRuleGroupsApi2D().applyRuleGroup(curLevel, ruleGroup, {
-		applyRandomRuleGroup: function(level, rules) {
-			return applyRandomRuleGroup(level, rules);
-		},
-		onIterationLimit: function(rule) {
-			logErrorCacheable("Got caught looping lots in a rule group :O", rule.lineNumber, true);
-		},
-		onPropagatedIteration: function(level) {
-			if (verbose_logging) {
-				debugger_turnIndex++;
-				addToDebugTimeline(level, -2);//pre-movement-applied debug state
-			}
+	if (ruleGroup[0].isRandom) {
+		return applyRandomRuleGroup(curLevel,ruleGroup);
+	}
+
+  	var loopPropagated=false;
+    var propagated=true;
+    var loopcount=0;
+	var nothing_happened_counter = -1;
+    while(propagated) {
+		loopcount++;
+		if (loopcount>200) {
+			logErrorCacheable("Got caught looping lots in a rule group :O",ruleGroup[0].lineNumber,true);
+			break;
 		}
-	}).returnValue;
+        propagated=false;
+
+        for (var ruleIndex=0;ruleIndex<ruleGroup.length;ruleIndex++) {
+            var rule = ruleGroup[ruleIndex];     
+			if (rule.tryApply(curLevel)){
+				if (!rule.isOnce)
+					propagated=true;
+				nothing_happened_counter=0;//why am I resetting to 1 rather than 0? because I've just verified that applications of the current rule are exhausted
+			} else {
+				nothing_happened_counter++;
+			}
+			if ( nothing_happened_counter === ruleGroup.length)
+				break;
+        }
+        if (propagated) {
+        	loopPropagated=true;
+			
+			if (verbose_logging){
+				debugger_turnIndex++;
+				addToDebugTimeline(curLevel,-2);//pre-movement-applied debug state
+			}
+        }
+    }
+
+    return loopPropagated;
 }
 
 function applyRules(rules, loopPoint, subroutines, startRuleGroupindex, bannedGroup){
-	perfCounters.tries++;
-    playerPositions = getPlayerPositions();
-	return getRuleGroupsApi2D().applyRuleSequence(curLevel, rules, loopPoint, subroutines, startRuleGroupindex, {
-		bannedGroup: bannedGroup,
-		applyRuleGroup: function(level, ruleGroup) {
-			return { returnValue: applyRuleGroup(ruleGroup), changed: false };
-		},
-		getGosubTarget: function() {
-			return gosubTarget;
-		},
-		clearGosubTarget: function() {
-			gosubTarget = -1;
-		},
-		onGosub: function(level, groups, fromGroupIndex, targetGroupIndex) {
-			if (verbose_logging)
-				consolePrint(`Gosub to ${htmlJump(groups[targetGroupIndex][0].lineNumber)}`, true, groups[fromGroupIndex][0].lineNumber);
-			if (debugSwitch.includes('gosub')) console.log(`gosub1 group:${targetGroupIndex} line:${groups[targetGroupIndex][0].lineNumber}`, []);
-		},
-		onGosubReturn: function(level, groups, returnGroupIndex) {
-			if (verbose_logging)
-				consolePrint(`Return to ${htmlJump(groups[returnGroupIndex][0].lineNumber)}`, true);
-			if (debugSwitch.includes('gosub')) console.log(`gosub2 group:${returnGroupIndex} line:${groups[returnGroupIndex][0].lineNumber}`, []);
-		},
-		onAfterGroup: function() {
-			if (verbose_logging){
-				debugger_turnIndex++;
-				addToDebugTimeline(curLevel,-2);
-			}
-		},
-		onLoopLimit: function(ruleGroup) {
-			logErrorCacheable("got caught in an endless startloop...endloop vortex, escaping!", ruleGroup[0].lineNumber, true);
+	//console.log(`Apply rules rules:${rules.length} objects:${level.objects}`);
+
+	// find the end of this block of rule groups
+	function findEnd(start) {
+		let result = -1;
+		if (start < rules.length) {
+			// find the subroutine after the one we are in, if any
+			// note: trouble if it's an ==
+			let x = subroutines.findIndex(s => s.lineNumber > rules[start][0].lineNumber);
+			// find the rule group for that line number
+			if (x != -1)
+				result = rules.findIndex(r => r[0].lineNumber >= subroutines[x].lineNumber) 
 		}
-	});
+		return (result == -1) ? rules.length : result;
+	}
+
+	perfCounters.tries++;
+    //for each rule
+    //try to match it
+
+    playerPositions = getPlayerPositions();
+	
+	// stack of rule group index to return to at end of subroutine
+	const gosubStack = []; // PS>
+
+    //when we're going back in, let's loop, to be sure to be sure
+    let loopPropagated = startRuleGroupindex > 0;
+    let loopCount = 0;
+	let endIndex = findEnd(startRuleGroupindex);
+    for (let ruleGroupIndex = startRuleGroupindex; ruleGroupIndex < endIndex; ) {
+		// first process the rule and check for endloop
+		if (bannedGroup && bannedGroup[ruleGroupIndex]) {
+			//do nothing
+		} else {
+			const ruleGroup = rules[ruleGroupIndex];
+			loopPropagated = applyRuleGroup(ruleGroup) || loopPropagated;
+		}
+		// loop ends right here
+        if (loopPropagated && loopPoint[ruleGroupIndex] >= 0) { 
+			if (checkLoop())
+				break; 
+		} else {
+			if (gosubTarget >= 0) {
+				// push current location so on return we can check if at end
+				gosubStack.push(ruleGroupIndex);  // todo: push loop point
+				if (verbose_logging)
+					consolePrint(`Gosub to ${htmlJump(rules[gosubTarget][0].lineNumber)}`, true, rules[ruleGroupIndex][0].lineNumber);
+				ruleGroupIndex = gosubTarget;
+				endIndex = findEnd(ruleGroupIndex);
+				gosubTarget = -1;
+				//console.log(`gosub group:${ruleGroupIndex} line:${rules[ruleGroupIndex][0].lineNumber}`)
+				if (debugSwitch.includes('gosub')) console.log(`gosub1 group:${ruleGroupIndex} line:${rules[ruleGroupIndex][0].lineNumber} endindex:${endIndex}`, gosubStack);
+			} else {
+				ruleGroupIndex++;
+				// note special for loops and gosubs that end after the last rule
+				if (ruleGroupIndex == endIndex && loopPropagated && loopPoint[ruleGroupIndex] >= 0) {
+					if (checkLoop())
+						break; 
+				}		
+
+				// loop to handle stacked returns
+				while (ruleGroupIndex == endIndex && gosubStack.length > 0) {
+					if (verbose_logging)
+						consolePrint(`Return to ${htmlJump(rules[gosubStack.at(-1)][0].lineNumber)}`, true);
+					ruleGroupIndex = gosubStack.pop();
+					endIndex = findEnd(ruleGroupIndex);
+					ruleGroupIndex++;
+					if (debugSwitch.includes('gosub')) console.log(`gosub2 group:${ruleGroupIndex} line:${rules[ruleGroupIndex][0].lineNumber} endindex:${endIndex}`, gosubStack);
+				}
+			}
+		}
+
+		if (verbose_logging){
+			debugger_turnIndex++;
+			addToDebugTimeline(curLevel,-2);//pre-movement-applied debug state
+		}
+
+		function checkLoop() {
+			ruleGroupIndex = loopPoint[ruleGroupIndex];
+			loopPropagated = false;
+			loopCount++;
+			if (loopCount > 200) {
+				var ruleGroup = rules[ruleGroupIndex];
+				logErrorCacheable("got caught in an endless startloop...endloop vortex, escaping!", ruleGroup[0].lineNumber, true);
+				return true;
+			}	
+		}
+	}
 }
 
 //if this returns!=null, need to go back and reprocess
@@ -3170,24 +3073,47 @@ function resolveMovements(level, bannedGroup, dontModify) {
 		if (!movementMask.iszero()) {
 			var rigidMovementAppliedMask = level.rigidMovementAppliedMask[i];
 			if (!rigidMovementAppliedMask.iszero()) {
-				var rigidFailure = getCellMasksApi2D().findRigidMovementFailure(
-					movementMask,
-					rigidMovementAppliedMask,
-					level.rigidGroupIndexMask[i],
-					{
-						layerCount: level.layerCount,
-						movementBits: MOV_BITS,
-						movementMask: MOV_MASK,
-						rigidGroupIndexToGroupIndex: state.rigidGroupIndex_to_GroupIndex
+				movementMask.iand(rigidMovementAppliedMask);
+				if (!movementMask.iszero()) {
+					//find what layer was restricted
+					for (var j=0;j<level.layerCount;j++) {
+						var layerSection = movementMask.getshiftor(MOV_MASK, MOV_BITS * j);
+						if (layerSection!==0) {
+							//this is our layer!
+							var rigidGroupIndexMask = level.rigidGroupIndexMask[i];
+							var rigidGroupIndex = rigidGroupIndexMask.getshiftor(MOV_MASK, MOV_BITS * j);
+							rigidGroupIndex--;//group indices start at zero, but are incremented for storing in the bitfield
+							var groupIndex = state.rigidGroupIndex_to_GroupIndex[rigidGroupIndex];
+							if (bannedGroup[groupIndex]!==true){
+								bannedGroup[groupIndex]=true
+							//backtrackTarget = rigidBackups[rigidGroupIndex];
+							doUndo=true;
+							}
+							break;
+						}
 					}
-				);
-				if (rigidFailure && bannedGroup[rigidFailure.groupIndex]!==true) {
-					bannedGroup[rigidFailure.groupIndex]=true
-					//backtrackTarget = rigidBackups[rigidGroupIndex];
-					doUndo=true;
 				}
 			}
-			processCantMoveSfx2D(i, cellMask, movementMask);
+			// go through each of the fx masks to see if it applies to an object in this cell
+			for (const fx of state.sfx_MovementFailureMasks) {
+				if (cellMask.get(fx.objId)) {
+					if (movementMask.anyBitsInCommon(fx.directionMask)) {
+						const object = getObject(fx.objId);
+						if (verbose_logging) 
+							consolePrint(`Object "${state.idDict[object]}" can't move, playing seed "${seedsToPlay_CantMove[i]}"`)
+						if (fx.seed.startsWith('afx')) {
+							const move = getLayerMovement(movementMask, object.layer);
+							seedsToAnimate[i+','+fx.objId] = { 
+								kind: 'cant', 
+								seed: fx.seed, 
+								dir: move 
+							};
+						}
+						else if (seedsToPlay_CantMove.indexOf(fx.seed)===-1)
+							seedsToPlay_CantMove.push(fx.seed);
+					}
+				}
+			}
     	}
 
     	for (var j=0;j<STRIDE_MOV;j++) {
@@ -3246,13 +3172,12 @@ var playerPositionsAtTurnStart;
 
 // process inputs specific to level (code copied from testing framework)
 function processLevelInput() {
-	const level = getPlayableLevel(state, curLevelNo);
-	const input = level && level.input;
+	const input = state.levels[curLevelNo].input;
 	if (!input) return;
 	if (verbose_logging)
 		consolePrint(`Processing level input ${input}`);
 	const inputDat = input.split(',');
-	level.input = null;
+	state.levels[curLevelNo].input = null;
 
 	for (const val of inputDat) {
 		if (val==="undo") {
@@ -3280,12 +3205,6 @@ var perfCounters = {};
 /* returns a bool indicating if anything changed */
 function processInput(dir,dontDoWin,dontModify,bak,coord) {
 	//console.log(`Process input (${dir},${dontDoWin},${dontModify},${bak},${coord}) cmds=${level.commandQueue}`)
-	if (isCurrentLevel3D()) {
-		const host = getPuzzle3DPlayableHost();
-		if (!host || typeof host.processInput !== "function")
-			throw new Error("3D level input requires Puzzle3DPlayHost.processInput().");
-		return host.processInput(dir, dontDoWin, dontModify, bak, coord);
-	}
 	perfCounters = {
 		start: Date.now(),
 		rules: 0,
@@ -3620,7 +3539,47 @@ function procInp(dir,dontDoWin,dontModify,bak,coord) {
 		}
 
 		// move completed, survived so far, look at sounds to play
-		processTurnSfx2D();
+		// move and cant were added during rule processing
+        for (var i=0;i<seedsToPlay_CantMove.length;i++) {			
+            playSeed(seedsToPlay_CantMove[i]);
+        }
+
+        for (var i=0;i<seedsToPlay_CanMove.length;i++) {
+            playSeed(seedsToPlay_CanMove[i]);
+        }
+
+		// create and destroy were added ???
+		for (const entry of state.sfx_CreationMasks) {
+			if (sfxCreateMask.get(entry.objId)) {		// mask for objects created vs mask for sfx create event
+				if (entry.seed.startsWith('afx')) {
+					for (const fx of sfxCreateList) {
+						if (fx.objId == entry.objId) {
+							if (verbose_logging) consolePrint(`Created object "${state.idDict[entry.objId]}", playing seed "${entry.seed}"`);
+							seedsToAnimate[fx.posIndex+','+fx.objId] = { kind: 'create', seed: entry.seed };
+						}
+					}
+				} else {
+					if (verbose_logging) consolePrint(`Created object "${state.idDict[entry.objId]}", playing seed "${entry.seed}"`);
+					playSeed(entry.seed);
+				}
+			}
+		}
+  
+		for (const entry of state.sfx_DestructionMasks) {
+			if (sfxDestroyMask.get(entry.objId)) {
+				if (entry.seed.startsWith('afx')) {
+					for (const fx of sfxDestroyList) {
+						if (fx.objId == entry.objId) {
+							if (verbose_logging) consolePrint(`Destroyed object "${state.idDict[entry.objId]}", playing seed "${entry.seed}"`);
+							seedsToAnimate[fx.posIndex+','+fx.objId] = { kind: 'destroy', seed: entry.seed };
+						}
+					}
+				} else {
+					if (verbose_logging) consolePrint(`Destroyed object "${state.idDict[entry.objId]}", playing seed "${entry.seed}"`);
+					playSeed(entry.seed);
+				}
+			}
+		}
   
 		if (!dontModify){
 	    	processOutputCommands(curLevel.commandQueue);
@@ -3839,9 +3798,8 @@ function nextLevel() {
 	againing=false;
 	messagetext="";
 	statusText = "";
-	const levels = getPlayableLevels(state);
-	if (state && levels && (curLevelNo>levels.length-1) ){
-		curLevelNo=levels.length-1;
+	if (state && state.levels && (curLevelNo>state.levels.length-1) ){
+		curLevelNo=state.levels.length-1;
 	}
   
   	ignoreNotJustPressedAction=true;
@@ -3874,12 +3832,12 @@ function nextLevel() {
 			hasUsedCheckpoint=false;
 		}
 
-		if (curLevelNo<(levels.length-1)) {
+		if (curLevelNo<(state.levels.length-1)) {
 			var skip = false;
-			var curSection = levels[curLevelNo].section;
-			var nextSection = levels[curLevelNo+1].section;
+			var curSection = state.levels[curLevelNo].section;
+			var nextSection = state.levels[curLevelNo+1].section;
 			if(nextSection != curSection) {
-				setSectionSolved(levels[curLevelNo].section);
+				setSectionSolved(state.levels[curLevelNo].section);
 
 				if(solvedSections.length == state.sections.length && state.winSection != undefined) {
 					curLevelNo = state.winSection.firstLevel - 1; // it's gonna be increased to match few lines below
@@ -3917,8 +3875,8 @@ function nextLevel() {
 
 				tryPlayEndGameSound();
 			} else {
-				if (levels[curLevelNo].section != null) {
-					setSectionSolved(levels[curLevelNo].section);
+				if (state.levels[curLevelNo].section != null) {
+					setSectionSolved(state.levels[curLevelNo].section);
 				}
 				gotoLevelSelectScreen();
 			}
@@ -4117,14 +4075,4 @@ function updateCameraPositionTarget() {
 
 function IsMouseGameInputEnabled() {
 	return state.metadata.mouse_left || state.metadata.mouse_up || state.metadata.mouse_drag || state.metadata.mouse_clicks;
-}
-
-if (typeof module !== 'undefined' && module.exports) {
-	module.exports = {
-		Level,
-		direction3Deltas,
-		deltaPositionIndex,
-		deltaPositionIndex3,
-		getDirectionDelta3
-	};
 }

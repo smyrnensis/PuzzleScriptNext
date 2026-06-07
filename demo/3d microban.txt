@@ -3,6 +3,8 @@ author David Skinner
 homepage www.sneezingtiger.com/sokoban/levels/microbanText.html
 three_dimensions
 camera_angle 0 60
+tween_length 0.055
+tween_snap 10
 
 ========
 OBJECTS

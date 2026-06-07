@@ -13,8 +13,69 @@
             && root.THREE);
     }
 
+    function canPlayLevel(_compiledState, leveldat) {
+        return !!(leveldat && leveldat.is3d);
+    }
+
+    function getLevelItems(compiledState) {
+        return compiledState && Array.isArray(compiledState.levels)
+            ? compiledState.levels
+            : [];
+    }
+
+    function hasActiveSession() {
+        return !!root.puzzle3DSession;
+    }
+
+    function hasActiveBrowserSession() {
+        return hasActiveSession();
+    }
+
     function prepareCompiledState(compiledState, options) {
         return prepareCapabilities(compiledState && compiledState.hostCapabilities, options);
+    }
+
+    function startCompiledState(compiledState, command, randomseed) {
+        if (!hasThreeDimensionPlayableLevel(compiledState))
+            throw new Error("3D playback host cannot start a state without playable 3D levels.");
+        const cmd = command || ["restart"];
+        const name = cmd[0] || "restart";
+        if (name === "loadLevelEditor") {
+            const editorIndex = resolve3DLevelIndex(compiledState, cmd[1]);
+            if (openLevelEditor(compiledState, editorIndex, { randomseed }))
+                return compiledState;
+            throw new Error("3D level editor requires an editable 3D level.");
+        }
+        if (name === "rebuild" && root.puzzle3DSession) {
+            if (rebuildPlayableLevel(compiledState, root.puzzle3DSession.levelIndex, { randomseed }))
+                return compiledState;
+            throw new Error("3D rebuild requires an active 3D session.");
+        }
+        if (typeof root.setGameState !== "function")
+            throw new Error("3D playback host requires the 2D setGameState() flow boundary.");
+        root.puzzle3DCompiledState = compiledState;
+        root.puzzle3DRandomSeed = randomseed;
+        root.setGameState(compiledState, cmd, randomseed);
+        if (typeof root.clearInputHistory === "function")
+            root.clearInputHistory();
+        if (root.state === compiledState)
+            return compiledState;
+        throw new Error("3D playback host could not start the compiled state through setGameState().");
+    }
+
+    function resolve3DLevelIndex(compiledState, requestedIndex) {
+        const levels = getLevelItems(compiledState);
+        if (requestedIndex !== undefined && levels[requestedIndex] && levels[requestedIndex].is3d)
+            return requestedIndex;
+        for (let index = requestedIndex || 0; index < levels.length; index++) {
+            if (levels[index] && levels[index].is3d)
+                return index;
+        }
+        for (let index = 0; index < levels.length; index++) {
+            if (levels[index] && levels[index].is3d)
+                return index;
+        }
+        return requestedIndex || 0;
     }
 
     function prepareCapabilities(capabilities, options) {
@@ -50,45 +111,15 @@
         const moduleUrl = opts.threeModuleUrl || root.PUZZLE3D_THREE_MODULE_URL;
         if (!moduleUrl)
             return Promise.reject(new Error("3D renderer requires PUZZLE3D_THREE_MODULE_URL."));
-        if (root.location && root.location.protocol === "file:" && !/^(blob:|data:)/.test(moduleUrl))
-            threeReadyPromise = loadThreeGlobalScript(opts.threeGlobalUrl || root.PUZZLE3D_THREE_GLOBAL_URL);
-        else
-            threeReadyPromise = importModule(moduleUrl).then(module => {
-                root.THREE = module && module.default ? module.default : module;
-                return root.THREE;
-            });
+        threeReadyPromise = importModule(moduleUrl).then(module => {
+            root.THREE = module && module.default ? module.default : module;
+            return root.THREE;
+        });
         threeReadyPromise = threeReadyPromise.catch(err => {
             threeReadyPromise = null;
             throw err;
         });
         return threeReadyPromise;
-    }
-
-    function loadThreeGlobalScript(scriptUrl) {
-        if (root.THREE)
-            return Promise.resolve(root.THREE);
-        if (!scriptUrl)
-            return Promise.reject(new Error("3D renderer cannot load Three.js modules from file://. Serve the game over HTTP, or provide PUZZLE3D_THREE_GLOBAL_URL for file:// playback."));
-        if (!root.document || typeof root.document.createElement !== "function")
-            return Promise.reject(new Error("3D renderer cannot load Three.js global fallback without document.createElement."));
-
-        return new Promise((resolve, reject) => {
-            const script = root.document.createElement("script");
-            script.src = scriptUrl;
-            script.onload = () => {
-                if (root.THREE)
-                    resolve(root.THREE);
-                else
-                    reject(new Error("3D renderer loaded Three.js global fallback, but window.THREE was not set."));
-            };
-            script.onerror = () => reject(new Error("3D renderer could not load Three.js global fallback."));
-            const parent = root.document.head || root.document.documentElement || root.document.body;
-            if (!parent || typeof parent.appendChild !== "function") {
-                reject(new Error("3D renderer cannot append Three.js global fallback script."));
-                return;
-            }
-            parent.appendChild(script);
-        });
     }
 
     function ensureWebGL() {
@@ -119,6 +150,15 @@
         return webGLReadyPromise;
     }
 
+    function hasThreeDimensionPlayableLevel(compiledState) {
+        const levels = getLevelItems(compiledState);
+        for (let i = 0; i < levels.length; i++) {
+            if (levels[i] && levels[i].is3d)
+                return true;
+        }
+        return false;
+    }
+
     function startPlayableLevel(compiledState, levelIndex, options) {
         if (!canStart())
             return false;
@@ -128,7 +168,7 @@
         root.puzzle3DCompiledState = compiledState;
         root.puzzle3DRandomSeed = opts.randomseed;
 
-        startSessionAtLevel(levelIndex || 0, compiledState);
+        const session = startSessionAtLevel(levelIndex || 0, compiledState);
         if (typeof root.clearInputHistory === "function")
             root.clearInputHistory();
         if (typeof root.canvasResize === "function")
@@ -142,17 +182,43 @@
         root.titleScreen = false;
         root.levelEditorOpened = false;
         root.oldflickscreendat = [];
+        root.puzzle3DScreenCamera = null;
+        root.lastProcessInput3DResult = null;
         root.curLevelNo = levelIndex;
-        const levels = typeof root.getPlayableLevels === "function"
-            ? root.getPlayableLevels(state)
-            : state && state.levels || [];
+        const levels = getLevelItems(state);
         root.curLevel = levels && levels[levelIndex] || null;
         const session = root.GameRuntime3D.createSessionFromState3D(state, {
             levelIndex
         });
         root.puzzle3DSession = session;
         renderSessionFrame(session, null, state);
+        syncBrowserLoopBindings();
         return session;
+    }
+
+    function rebuildPlayableLevel(compiledState, levelIndex, options) {
+        if (!canStart())
+            return false;
+        if (!root.puzzle3DSession)
+            throw new Error("3D rebuild requires an active 3D session.");
+        if (!root.GameRuntime3D || typeof root.GameRuntime3D.rebuildSessionFromState3D !== "function")
+            throw new Error("3D rebuild requires GameRuntime3D.rebuildSessionFromState3D().");
+
+        const opts = options || {};
+        const index = levelIndex !== undefined ? levelIndex : root.puzzle3DSession.levelIndex;
+        root.state = compiledState;
+        root.puzzle3DCompiledState = compiledState;
+        root.puzzle3DRandomSeed = opts.randomseed;
+        root.puzzle3DScreenCamera = null;
+        root.lastProcessInput3DResult = null;
+        root.curLevelNo = index;
+        const levels = getLevelItems(compiledState);
+        root.curLevel = levels && levels[index] || root.curLevel;
+        root.GameRuntime3D.rebuildSessionFromState3D(root.puzzle3DSession, compiledState, Object.assign({}, opts, {
+            levelIndex: index
+        }));
+        renderSessionFrame(root.puzzle3DSession, null, compiledState);
+        return true;
     }
 
     function syncLevelEditorBindings() {
@@ -183,9 +249,7 @@
     function openLevelEditor(compiledState, levelIndex, options) {
         const state = compiledState || root.puzzle3DCompiledState || root.state;
         const index = levelIndex === undefined || levelIndex === null ? root.curLevelNo || 0 : levelIndex;
-        const levels = typeof root.getPlayableLevels === "function"
-            ? root.getPlayableLevels(state)
-            : state && state.levels || [];
+        const levels = getLevelItems(state);
         const level = levels && levels[index];
         if (!level || !level.is3d || !root.GameRuntime3D || !root.GameRuntime3D.createSessionFromState3D)
             return false;
@@ -198,6 +262,8 @@
         root.titleScreen = false;
         root.levelEditorOpened = true;
         root.oldflickscreendat = [];
+        root.puzzle3DScreenCamera = null;
+        root.lastProcessInput3DResult = null;
 
         if (!root.puzzle3DSession || root.puzzle3DSession.state !== state || root.puzzle3DSession.levelIndex !== index) {
             root.puzzle3DSession = root.GameRuntime3D.createSessionFromState3D(state, Object.assign({}, options || {}, {
@@ -239,6 +305,7 @@
         root.puzzle3DSession = null;
         root.puzzle3DRenderFrame = null;
         root.lastProcessInput3DResult = null;
+        root.puzzle3DScreenCamera = null;
         removeRenderCanvas();
     }
 
@@ -272,25 +339,260 @@
     }
 
     function renderSessionFrame(session, turnResult, compiledState) {
+        const canvas = getRenderCanvas();
+        const screenView = updateScreenView3D(session, compiledState, canvas);
         const frameOptions = {
-            state: compiledState
+            state: compiledState,
+            view: Object.assign({
+                viewportAspect: renderCanvasAspect(canvas)
+            }, screenView)
         };
         const frame = turnResult
             ? root.Puzzle3DRenderFrame.buildSessionTurnRenderFrame3D(turnResult, frameOptions)
             : root.Puzzle3DRenderFrame.buildSessionRenderFrame3D(session, frameOptions);
         root.puzzle3DRenderFrame = frame;
-        root.Puzzle3DThreeRenderer.renderToCanvas(getRenderCanvas(), frame, {
+        root.Puzzle3DThreeRenderer.renderToCanvas(canvas, frame, {
             tweenElapsedMs: root.tweentimer || 0
         });
-        syncTweenAnimationFlags(frame);
+        syncTweenAnimationFlags(frame, compiledState);
         return frame;
+    }
+
+    function renderCanvasAspect(canvas) {
+        const width = canvas && (canvas.clientWidth || canvas.width) || 640;
+        const height = canvas && (canvas.clientHeight || canvas.height) || 480;
+        return width / Math.max(1, height);
+    }
+
+    function updateScreenView3D(session, compiledState, canvas) {
+        if (!session || !session.runtime || !session.runtime.board)
+            return {};
+        const state = compiledState || session.state || {};
+        const metadata = state.metadata || {};
+        const viewport = screenViewport3D(metadata);
+        const board = session.runtime.board;
+        if (!viewport) {
+            root.puzzle3DScreenCamera = null;
+            return {};
+        }
+
+        const width = Math.min(positiveInteger(viewport[0], board.width), board.width);
+        const depth = Math.min(positiveInteger(viewport[1], board.depth), board.depth);
+        const player = firstPlayerCoord3D(board);
+        let region = null;
+        let cameraCenter = null;
+
+        if (metadata.smoothscreen !== undefined) {
+            const camera = updateSmoothCamera3D(session, metadata.smoothscreen, player, width, depth, canvas);
+            if (camera) {
+                region = regionFromCameraPosition3D(camera.position, board, width, depth);
+                cameraCenter = { x: camera.position.x, z: camera.position.z };
+            }
+        } else {
+            root.puzzle3DScreenCamera = null;
+            region = regionFromPlayer3D(metadata, board, player, width, depth);
+        }
+
+        if (!region)
+            return {};
+        session.oldflickscreendat = [
+            region.x,
+            region.z,
+            region.x + region.width,
+            region.z + region.depth
+        ];
+        root.oldflickscreendat = session.oldflickscreendat.slice();
+        return {
+            visibleRegion: region,
+            cameraCenter
+        };
+    }
+
+    function screenViewport3D(metadata) {
+        if (metadata.flickscreen !== undefined)
+            return metadata.flickscreen;
+        if (metadata.zoomscreen !== undefined)
+            return metadata.zoomscreen;
+        if (metadata.smoothscreen !== undefined && metadata.smoothscreen.screenSize)
+            return [metadata.smoothscreen.screenSize.width, metadata.smoothscreen.screenSize.height];
+        return null;
+    }
+
+    function regionFromPlayer3D(metadata, board, player, width, depth) {
+        if (!player)
+            return null;
+        if (metadata.flickscreen !== undefined) {
+            return {
+                x: clampScreenMin(Math.floor(player.x / width) * width, board.width, width),
+                z: clampScreenMin(Math.floor(player.z / depth) * depth, board.depth, depth),
+                width,
+                depth
+            };
+        }
+        if (metadata.zoomscreen !== undefined) {
+            return {
+                x: centeredScreenMin(player.x, board.width, width),
+                z: centeredScreenMin(player.z, board.depth, depth),
+                width,
+                depth
+            };
+        }
+        return null;
+    }
+
+    function updateSmoothCamera3D(session, smoothscreenConfig, player, width, depth, canvas) {
+        const board = session.runtime.board;
+        let camera = root.puzzle3DScreenCamera;
+        if (!player) {
+            return camera && camera.session === session && camera.levelIndex === session.levelIndex
+                ? camera
+                : null;
+        }
+        if (!camera || camera.session !== session || camera.levelIndex !== session.levelIndex) {
+            const target = smoothCameraTargetForPlayer3D(player, board, width, depth, smoothscreenConfig);
+            camera = {
+                session,
+                levelIndex: session.levelIndex,
+                position: Object.assign({}, target),
+                target
+            };
+            root.puzzle3DScreenCamera = camera;
+            return camera;
+        }
+
+        updateSmoothCameraTargetAxis3D(camera, player, smoothscreenConfig, "x", "width", width, board.width);
+        updateSmoothCameraTargetAxis3D(camera, player, smoothscreenConfig, "z", "height", depth, board.depth);
+        advanceSmoothCamera3D(camera, smoothscreenConfig, width, depth, canvas);
+        return camera;
+    }
+
+    function smoothCameraTargetForPlayer3D(player, board, width, depth, smoothscreenConfig) {
+        const boundary = smoothscreenConfig.boundarySize || {};
+        return {
+            x: smoothscreenConfig.flick
+                ? flickCameraPosition(player.x, board.width, width, positiveInteger(boundary.width, width))
+                : cameraPosition(player.x, board.width, width),
+            z: smoothscreenConfig.flick
+                ? flickCameraPosition(player.z, board.depth, depth, positiveInteger(boundary.height, depth))
+                : cameraPosition(player.z, board.depth, depth)
+        };
+    }
+
+    function updateSmoothCameraTargetAxis3D(camera, player, smoothscreenConfig, coord, boundaryName, screenDimension, levelDimension) {
+        const boundary = smoothscreenConfig.boundarySize || {};
+        const boundaryDimension = positiveInteger(boundary[boundaryName], 1);
+        const playerVector = player[coord] - camera.target[coord];
+        const direction = Math.sign(playerVector);
+        const boundaryVector = direction > 0
+            ? Math.ceil(boundaryDimension / 2)
+            : -(Math.floor(boundaryDimension / 2) + 1);
+        if (Math.abs(playerVector) - Math.abs(boundaryVector) < 0)
+            return;
+        camera.target[coord] = smoothscreenConfig.flick
+            ? flickCameraPosition(player[coord], levelDimension, screenDimension, boundaryDimension)
+            : cameraPosition(player[coord] - boundaryVector + direction, levelDimension, screenDimension);
+    }
+
+    function advanceSmoothCamera3D(camera, smoothscreenConfig, width, depth, canvas) {
+        const speed = smoothCameraSpeed(smoothscreenConfig.cameraSpeed);
+        const snap = smoothCameraSnapThreshold(width, depth, canvas);
+        for (const coord of ["x", "z"]) {
+            const delta = camera.target[coord] - camera.position[coord];
+            if (delta === 0)
+                continue;
+            if (Math.abs(delta) < snap) {
+                camera.position[coord] = camera.target[coord];
+                continue;
+            }
+            camera.position[coord] += delta * speed;
+        }
+    }
+
+    function regionFromCameraPosition3D(position, board, width, depth) {
+        return {
+            x: screenMinFromCameraPosition(position.x, board.width, width),
+            z: screenMinFromCameraPosition(position.z, board.depth, depth),
+            width,
+            depth
+        };
+    }
+
+    function firstPlayerCoord3D(board) {
+        const playerMask = board.playerMask;
+        if (!playerMask)
+            return null;
+        for (let index = 0; index < board.cellCount; index++) {
+            if (anyBitsInCommon(board.getCell(index), playerMask))
+                return board.indexToCoord(index);
+        }
+        return null;
+    }
+
+    function anyBitsInCommon(a, b) {
+        const left = a && (a.data || a) || [];
+        const right = b && (b.data || b) || [];
+        for (let i = 0; i < Math.min(left.length, right.length); i++) {
+            if ((left[i] & right[i]) !== 0)
+                return true;
+        }
+        return false;
+    }
+
+    function centeredScreenMin(position, dimension, screenDimension) {
+        return Math.max(Math.min(position - Math.floor(screenDimension / 2), dimension - screenDimension), 0);
+    }
+
+    function screenMinFromCameraPosition(position, dimension, screenDimension) {
+        return clampScreenMin(Math.floor(position) - Math.floor(screenDimension / 2), dimension, screenDimension);
+    }
+
+    function cameraPosition(targetPosition, levelDimension, screenDimension) {
+        return Math.min(
+            Math.max(targetPosition, Math.floor(screenDimension / 2)),
+            levelDimension - Math.ceil(screenDimension / 2)
+        );
+    }
+
+    function flickCameraPosition(targetPosition, levelDimension, screenDimension, boundaryDimension) {
+        const flickGridOffset = Math.floor(screenDimension / 2) - Math.floor(boundaryDimension / 2);
+        const flickGridPlayerPosition = targetPosition - flickGridOffset;
+        const flickGridPlayerCell = Math.floor(flickGridPlayerPosition / boundaryDimension);
+        const maxFlickGridCell = Math.floor((levelDimension - Math.ceil(screenDimension / 2) - Math.floor(boundaryDimension / 2) - flickGridOffset) / boundaryDimension);
+        return Math.min(Math.max(flickGridPlayerCell, 0), maxFlickGridCell) * boundaryDimension + Math.floor(screenDimension / 2);
+    }
+
+    function clampScreenMin(value, dimension, screenDimension) {
+        return Math.max(0, Math.min(value, Math.max(0, dimension - screenDimension)));
+    }
+
+    function smoothCameraSpeed(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number))
+            return 0.125;
+        return Math.max(0, Math.min(number, 1));
+    }
+
+    function smoothCameraSnapThreshold(width, depth, canvas) {
+        const pixelWidth = canvas && canvas.width ? canvas.width / Math.max(1, width) : 1;
+        const pixelDepth = canvas && canvas.height ? canvas.height / Math.max(1, depth) : 1;
+        return 0.5 / Math.max(1, Math.min(pixelWidth, pixelDepth));
+    }
+
+    function positiveInteger(value, fallback) {
+        const number = Number(value);
+        return Number.isInteger(number) && number > 0 ? number : fallback;
     }
 
     function redraw(compiledState) {
         if (!root.puzzle3DSession || root.textMode || root.titleScreen)
             return false;
-        renderSessionFrame(root.puzzle3DSession, root.lastProcessInput3DResult, compiledState || root.puzzle3DCompiledState || root.state);
+        renderSessionFrame(root.puzzle3DSession, currentSessionTurnResult(root.puzzle3DSession), compiledState || root.puzzle3DCompiledState || root.state);
         return true;
+    }
+
+    function currentSessionTurnResult(session) {
+        const result = root.lastProcessInput3DResult;
+        return result && result.session === session ? result : null;
     }
 
     function resetTweenTimerForTurn(result) {
@@ -299,11 +601,12 @@
             root.tweentimer = 0;
     }
 
-    function syncTweenAnimationFlags(frame) {
+    function syncTweenAnimationFlags(frame, compiledState) {
         const tween = frame && frame.effects && frame.effects.tween;
-        const active = !!(tween && tween.enabled && (root.tweentimer || 0) < tween.lengthMs);
+        const smooth = !!(compiledState && compiledState.metadata && compiledState.metadata.smoothscreen);
+        const active = smooth || !!(tween && tween.enabled && (root.tweentimer || 0) < tween.lengthMs);
         root.isAnimating = active;
-        root.isTweening = active;
+        root.isTweening = !!(tween && tween.enabled && (root.tweentimer || 0) < tween.lengthMs);
     }
 
     function syncBrowserTurnState(result) {
@@ -317,27 +620,57 @@
             root.againing = false;
         }
         if (result.tailPlan && result.tailPlan.winDeferred)
-            scheduleBrowserWin();
+            triggerBrowserWin();
         if (result.tailPlan && result.tailPlan.quitDeferred) {
             handleBrowserQuit();
             browserState.skipRender = true;
         }
         if (result.tailPlan && result.tailPlan.terminalAction)
             applyBrowserTerminalActionEffects(result.tailPlan.terminalAction);
+        syncBrowserLoopBindings();
         return browserState;
     }
 
-    function scheduleBrowserWin() {
-        if (root.winning)
-            return;
-        clearBrowserAgain();
-        playBrowserSimpleSound("endlevel");
-        root.winning = true;
-        root.timer = 0;
+    function triggerBrowserWin() {
+        if (typeof root.DoWin !== "function")
+            throw new Error("3D browser win flow requires the 2D DoWin() boundary.");
+        root.DoWin();
     }
 
     function clearBrowserAgain() {
         root.againing = false;
+    }
+
+    function syncBrowserLoopBindings() {
+        if (!root || typeof root.eval !== "function")
+            return;
+        const bindings = [
+            "state",
+            "puzzle3DCompiledState",
+            "puzzle3DSession",
+            "puzzle3DRenderFrame",
+            "lastProcessInput3DResult",
+            "puzzle3DScreenCamera",
+            "curLevelNo",
+            "curLevel",
+            "textMode",
+            "titleScreen",
+            "quittingMessageScreen",
+            "messagetext",
+            "messageselected",
+            "ignoreNotJustPressedAction",
+            "timer",
+            "winning",
+            "againing"
+        ];
+        for (let i = 0; i < bindings.length; i++) {
+            const name = bindings[i];
+            try {
+                root.eval(name + " = globalThis." + name + ";");
+            } catch (err) {
+                // Some host tests and shells do not expose every browser binding.
+            }
+        }
     }
 
     function playBrowserSimpleSound(name) {
@@ -345,6 +678,7 @@
             cancel: "tryPlayCancelSound",
             endlevel: "tryPlayEndLevelSound",
             restart: "tryPlayRestartSound",
+            showmessage: "tryPlayShowMessageSound",
             undo: "tryPlayUndoSound"
         }[name];
         if (methodName && typeof root[methodName] === "function") {
@@ -407,14 +741,21 @@
         removeRenderCanvas();
         if (typeof root.showTempMessage === "function") {
             root.showTempMessage(message);
+            syncBrowserLoopBindings();
             return;
         }
+        playBrowserSimpleSound("showmessage");
+        root.textMode = true;
+        root.titleScreen = false;
         root.messagetext = message;
         if (typeof root.drawMessageScreen === "function")
             root.drawMessageScreen(root.messagetext);
         root.messageselected = false;
+        if (typeof root.clearInputHistory === "function")
+            root.clearInputHistory();
         if (typeof root.canvasResize === "function")
             root.canvasResize();
+        syncBrowserLoopBindings();
     }
 
     function handleBrowserQuit() {
@@ -512,6 +853,8 @@
             commandArtifacts: { queue: [command] }
         };
         const plan = root.GameRuntime3D.applySessionArtifacts3D(root.puzzle3DSession, artifacts, turn, {});
+        if (command === "restart")
+            root.puzzle3DScreenCamera = null;
         if (plan && plan.terminalAction)
             applyBrowserTerminalActionEffects(plan.terminalAction);
         root.lastProcessInput3DResult = {
@@ -589,11 +932,16 @@
 
     const api = {
         canStart,
+        canPlayLevel,
+        hasActiveSession,
+        hasActiveBrowserSession,
         prepareCompiledState,
+        startCompiledState,
         prepareCapabilities,
         ensureThree,
         ensureWebGL,
         startPlayableLevel,
+        rebuildPlayableLevel,
         openLevelEditor,
         processInput,
         handleSessionCommand,
@@ -606,8 +954,15 @@
     };
 
     root.Puzzle3DPlayHost = api;
+    root.PuzzleExternalPlayableHosts = root.PuzzleExternalPlayableHosts || [];
+    if (root.PuzzleExternalPlayableHosts.indexOf(api) < 0)
+        root.PuzzleExternalPlayableHosts.push(api);
     root.PuzzleHostCapabilities = root.PuzzleHostCapabilities || {};
     root.PuzzleHostCapabilities.prepareCompiledState = prepareCompiledState;
+    root.PuzzleHostCapabilities.startCompiledState = startCompiledState;
+    root.PuzzleHostCapabilities.hasActiveBrowserSession = hasActiveBrowserSession;
+    root.PuzzleHostCapabilities.processBrowserInput = processInput;
+    root.PuzzleHostCapabilities.handleSessionCommand = handleSessionCommand;
     root.PuzzleHostCapabilities.canStart = canStart;
     root.PuzzleHostCapabilities.restore = restore;
     if (typeof module !== "undefined" && module.exports)

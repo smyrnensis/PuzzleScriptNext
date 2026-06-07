@@ -42,6 +42,35 @@
         return session;
     }
 
+    function rebuildSessionFromState3D(session, state, options) {
+        if (!session || !session.runtime || !session.runtime.board)
+            throw new Error("3D session rebuild requires an active session.");
+        const opts = Object.assign({}, session.options || {}, options || {});
+        const levelIndex = opts.levelIndex !== undefined ? opts.levelIndex : session.levelIndex;
+        const currentSource = session.runtime.board.cloneSource();
+        const runtime = createRuntimeForLevel(state, levelIndex, opts);
+        assertRebuildCompatible3D(session.state, state, currentSource, runtime.board);
+        const restartSource = runtime.board.cloneSource();
+
+        copyCurrentCellsIntoRuntime3D(runtime, currentSource);
+        session.state = state;
+        session.options = opts;
+        session.runtime = runtime;
+        session.levelIndex = levelIndex;
+        session.restartSource = restartSource;
+        session.checkpointSource = null;
+        session.won = false;
+        session.completed = false;
+        session.lastTurn = null;
+        session.history = [];
+        session.backups = [];
+        session.linkStack = [];
+        session.oldflickscreendat = currentSource.oldflickscreendat
+            ? cloneOldFlickScreenDat(currentSource.oldflickscreendat)
+            : initialOldFlickScreenDat3D(state && state.metadata, runtime.board);
+        return session;
+    }
+
     function processSessionTurn3D(session, inputDirection, options) {
         if (!session || !session.runtime)
             throw new Error("3D session turn requires a session created by createSessionFromState3D.");
@@ -125,6 +154,18 @@
 
     function applySessionArtifacts3D(session, artifacts, turn, options) {
         return sessionRuntimeApi.applySessionArtifacts(session, artifacts, turn, options, buildSessionHooks3D());
+    }
+
+    function advanceSessionLevelItem3D(session, options) {
+        if (!session || !session.state || !session.state.levels)
+            return false;
+        const nextIndex = session.levelIndex + 1;
+        if (!hasSessionLevel3D(session, nextIndex)) {
+            session.completed = true;
+            return true;
+        }
+        sessionRuntimeApi.gotoSessionLevel(session, nextIndex, options || session.options || {}, buildSessionHooks3D());
+        return true;
     }
 
     function boardChangedThisTurn(turn) {
@@ -252,6 +293,36 @@
                 level: state.levels[levelIndex]
             })
         }));
+    }
+
+    function assertRebuildCompatible3D(oldState, newState, source, targetBoard) {
+        const fields = ["width", "height", "depth", "cellCount", "layerCount", "movementBits", "strideMov"];
+        for (const field of fields) {
+            if (source[field] !== targetBoard[field])
+                throw new Error(`3D rebuild cannot preserve the current board after changing ${field}. Run the level instead.`);
+        }
+        if (source.strideObj > targetBoard.strideObj)
+            throw new Error("3D rebuild cannot preserve the current board after shrinking object storage. Run the level instead.");
+        assertExistingObjectIdsPreserved3D(oldState, newState);
+    }
+
+    function assertExistingObjectIdsPreserved3D(oldState, newState) {
+        const oldIds = oldState && oldState.idDict || [];
+        const newIds = newState && newState.idDict || [];
+        for (let index = 0; index < oldIds.length; index++) {
+            if (oldIds[index] !== newIds[index])
+                throw new Error(`3D rebuild cannot preserve the current board after changing object id ${index}. Run the level instead.`);
+        }
+    }
+
+    function copyCurrentCellsIntoRuntime3D(runtime, source) {
+        const board = runtime.board;
+        for (let index = 0; index < source.cellCount; index++) {
+            const cell = new Int32Array(board.strideObj);
+            const start = index * source.strideObj;
+            cell.set(source.cells.subarray(start, start + source.strideObj));
+            board.setCell(index, cell);
+        }
     }
 
     function createRuntimeFromBoardSource(runtime, source) {
@@ -423,10 +494,12 @@
 
     const GameRuntime3D = {
         createRuntimeFromState3D,
+        rebuildSessionFromState3D,
         processTurn3D,
         createSessionFromState3D,
         processSessionTurn3D,
         applySessionArtifacts3D,
+        advanceSessionLevelItem3D,
         createAndProcessTurn3D
     };
 

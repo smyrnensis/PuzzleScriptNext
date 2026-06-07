@@ -1,6 +1,6 @@
 // main entry point for editor
 
-const starterCodeFile = "3d microban.txt";
+const starterCodeFile = "next/starter.txt";
 
 // note: this returns the main editor window and any pre-loaded content
 var code = document.getElementById('code');
@@ -228,11 +228,7 @@ function tryLoadFile(fileName, docompile, doclear) {
 		
   		if (fileOpenClient.readyState!=4)
   			return;
-		var successfulFileLoad = fileOpenClient.status === 0
-			&& window.location
-			&& window.location.protocol === "file:"
-			&& fileOpenClient.responseText !== "";
-		if (fileOpenClient.status != 200 && fileOpenClient.status != 201 && !successfulFileLoad) {
+		if (fileOpenClient.status != 200 && fileOpenClient.status != 201) {
 			consoleError("HTTP Error "+ fileOpenClient.status + ' - ' + fileOpenClient.statusText);
 		} else 
 			loadGame(fileOpenClient.responseText, docompile, doclear)

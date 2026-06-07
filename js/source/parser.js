@@ -5,8 +5,7 @@ Brunt of the work by increpare (www.increpare.com), with many contributions by o
 
 This code comes from the PuzzleScriptPlus fork, with major features added by Auroriax, gathered from forks by many others.
 
-This version is PuzzleScript Next 3D Fork, derived from PuzzleScript Next by
-Davidus of Polyomino Games.
+This version is PuzzleScriptNext, by Davidus of Polyomino Games.
 
 Color values for named colours from arne, mostly (and a couple from a 32-colour palette attributed to him)
 http://androidarts.com/palette/16pal.htm
@@ -51,8 +50,6 @@ let directions_table = ['action', 'up', 'down', 'left', 'right', '^', 'v', '<', 
     'moving', 'stationary', 'parallel', 'perpendicular', 'horizontal', 'orthogonal', 'vertical', 'no', 'randomdir', 'random'];
 let directions_only = ['>', '\<', '\^', 'v', 'up', 'down', 'left', 'right', 'action', 'moving', 
     'stationary', 'no', 'randomdir', 'random', 'horizontal', 'vertical', 'orthogonal', 'perpendicular', 'parallel'];
-const directions3d_table = ['front', 'back', 'o', 'x'];
-const rule_prefix_directions = ['up', 'down', 'left', 'right', 'horizontal', 'vertical', 'orthogonal', 'late', 'rigid'];
 const mouse_clicks_table = ['lclick', 'rclick']; // gets appended
 
 // Note: '^', '>', 'v', '<' seems more logical, but is not compatible
@@ -210,7 +207,7 @@ var codeMirrorFn = function() {
 
     const reg_loopmarker = /^(startloop|endloop)$/;
     const reg_ruledirectionindicators = /^(up|down|left|right|horizontal|vertical|orthogonal|late|rigid)$/;
-    const reg_sounddirectionindicators = /^(up|down|left|right|front|back|horizontal|vertical|orthogonal)\b/i;
+    const reg_sounddirectionindicators = /^(up|down|left|right|horizontal|vertical|orthogonal)\b/i;
 
     const keyword_array = [ 'checkpoint', 'objects', 'collisionlayers', 'legend', 'sounds', 'rules', 'winconditions', 'levels',
         '|', '[', ']', 'up', 'down', 'left', 'right', 'late', 'rigid', '^', 'v', '>', '<', 'no', 'randomdir', 'random', 'horizontal', 'vertical',
@@ -221,13 +218,12 @@ var codeMirrorFn = function() {
     const prelude_keywords = ['allow_undo_level', 'auto_level_titles', 'case_sensitive', 'continue_is_level_select', 'debug', 'enable_pause', 
         'level_select', 'level_select_lock', 
         'mouse_clicks', 'noaction', 'nokeyboard', 'norepeat_action', 'norestart', 'noundo', 'require_player_movement', 
-        'orthographic_camera', 'perspective_camera', 'run_rules_on_level_start', 'runtime_metadata_twiddling',
-        'runtime_metadata_twiddling_debug', 'scanline', 'skip_title_screen', 'smoothscreen_debug', 'status_line',
-        'three_dimensions', 'throttle_movement', 'verbose_logging'];
+        'run_rules_on_level_start', 'runtime_metadata_twiddling', 'runtime_metadata_twiddling_debug', 'scanline', 
+        'skip_title_screen', 'smoothscreen_debug', 'status_line', 'throttle_movement', 'verbose_logging'];
     const prelude_param_text = ['title', 'author', 'homepage', 'custom_font', 'text_controls', 'text_message_continue', 'debug_switch', 'export_options' ];
     const prelude_param_number = ['again_interval', 'animate_interval', 'font_size', 'key_repeat_interval', 
-        'camera_distance', 'camera_view_angle', 'camera_zoom', 'level_select_unlocked_ahead',
-        'level_select_unlocked_rollover', 'local_radius', 'realtime_interval', 'tween_length', 'tween_snap'];
+        'level_select_unlocked_ahead', 'level_select_unlocked_rollover', 'local_radius', 'realtime_interval', 
+        'tween_length', 'tween_snap'];
     const prelude_param_single = [
         'background_color', 'flickscreen', 'level_select_solve_symbol', 'keyhint_color', 
         'message_text_align', 'mouse_drag', 'mouse_left', 'mouse_rdrag', 'mouse_right', 'mouse_rup', 'mouse_up',
@@ -238,7 +234,7 @@ var codeMirrorFn = function() {
         'game_uri', 'level_title_style', 'show_level_title_in_menu', 
     ];
     const prelude_param_multi = [
-        'camera_angle', 'smoothscreen', 'puzzlescript', 'youtube', 'load_images', 'color_palette'
+        'smoothscreen', 'puzzlescript', 'youtube', 'load_images', 'color_palette'
     ];
     const prelude_tables = [prelude_keywords, prelude_param_text, prelude_param_number, 
         prelude_param_single, prelude_param_multi];
@@ -461,12 +457,9 @@ var codeMirrorFn = function() {
 
     function blankLineHandle(state) {
         if (state.section == 'levels') {
-            const levels = shouldRouteLevelsTo3D(state)
-                ? state.threeDimensionLevels
-                : state.levels;
-            const toplevel = levels.at(-1);
+            const toplevel = state.levels.at(-1);
             if (toplevel && toplevel.length > 0)
-                levels.push([]);
+                state.levels.push([]);
         } else if (state.section == 'objects') {
             expandLastObject(state);  // otherwise error message could be on later line
             state.objects_section = 0;
@@ -937,10 +930,6 @@ var codeMirrorFn = function() {
             newobj.colors = [];
             newobj.spritematrix = [];
             newobj.spriteoffset = { x: 0, y: 0 };
-            delete newobj.sprite3matrix;
-            delete newobj.sprite3offset;
-            delete newobj.sprite3slice;
-            delete newobj.sprite3rowCounts;
             newobj.transforms = [];
             delete state.objects[candname];
             state.objects[candname] = newobj;
@@ -1000,10 +989,7 @@ var codeMirrorFn = function() {
         if (getTokens()) {
             if (values.text) 
                 obj.spritetext = values.text;
-            else if (isThreeDimensionsEnabled(state))
-                appendObjectSprite3Row(obj, values);
-            else
-                obj.spritematrix = (obj.spritematrix || []).concat([values]);
+            else obj.spritematrix = (obj.spritematrix || []).concat([values]);
         }
         if (!lexer.matchEol())
             lexer.pushToken(lexer.matchAll(), 'ERROR');
@@ -1049,41 +1035,6 @@ var codeMirrorFn = function() {
             lexer.matchEol();
             return !lexer.tokens.some(t => t.kind == 'ERROR');
         }
-    }
-
-    function appendObjectSprite3Row(obj, values) {
-        const slice = obj.sprite3slice || 0;
-        obj.sprite3matrix = obj.sprite3matrix || [];
-        obj.sprite3offset = obj.sprite3offset || { row: 0, col: 0, slice: 0 };
-        obj.sprite3rowCounts = obj.sprite3rowCounts || [];
-        const row = obj.sprite3rowCounts[slice] || 0;
-        obj.sprite3rowCounts[slice] = row + 1;
-
-        if (slice === 0)
-            obj.spritematrix = (obj.spritematrix || []).concat([values]);
-
-        obj.sprite3matrix[row] = obj.sprite3matrix[row] || [];
-        for (let col = 0; col < values.length; col++) {
-            obj.sprite3matrix[row][col] = obj.sprite3matrix[row][col] || [];
-            obj.sprite3matrix[row][col][slice] = values[col];
-        }
-    }
-
-    function parseObjectSprite3SliceSeparator(stream, state) {
-        const lexer = new Lexer(stream, state);
-        const obj = state.objects[state.objects_candname];
-        const token = lexer.match(/^;/);
-        if (token) {
-            lexer.pushToken(token, 'COLOR FADECOLOR');
-            obj.sprite3rowCounts = obj.sprite3rowCounts || [];
-            const slice = obj.sprite3slice || 0;
-            if (!obj.sprite3rowCounts[slice])
-                logError(`3D sprite slice separator found before any sprite rows for ${state.objects_candname}.`, state.lineNumber);
-            obj.sprite3slice = slice + 1;
-        }
-        if (!lexer.matchEol())
-            lexer.pushToken(lexer.matchAll(), 'ERROR');
-        return lexer.tokens;
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1873,87 +1824,6 @@ var codeMirrorFn = function() {
     }
 
     ////////////////////////////////////////////////////////////////////////////
-    // In three_dimensions mode, LEVELS keeps the ordinary level commands and
-    // uses blank lines for playable level boundaries. A standalone ';' line is
-    // reserved as the 3D slice separator inside playable levels.
-    function parseThreeDimensionLevel(stream, state) {
-        const lexer = new Lexer(stream, state);
-        const symbols = {};
-
-        if (getTokens())
-            setState();
-        if (!lexer.matchEol())
-            lexer.pushToken(lexer.matchAll(), 'ERROR');
-        return lexer.tokens;
-
-        function getTokens() {
-            let token;
-
-            if (token = lexer.match(/^(goto|level|link|message|section|title|input)/i, true)) {
-                symbols.start = token;
-                lexer.pushToken(token, `${errorCase(token)}_VERB`);
-
-                if (token == 'link') {
-                    if (!(token = lexer.match(reg_objectname, !state.case_sensitive)))
-                        logError(`LINK needs an object to know where to put the link.`, state.lineNumber);
-                    else if (!wordAlreadyDeclared(state, token))
-                        logError(`LINK object "${errorCase(token)}" not found, it needs to be already defined.`, state.lineNumber);
-                    else {
-                        const objects = expandSymbol(state, token, false, () => {});
-                        if (!(objects && objects.length == 1))
-                            logError(`LINK object "${errorCase(token)}" only works with a simple object or an alias, not something created with AND or OR.`, state.lineNumber);
-                        {
-                            symbols.link = objects[0];
-                            lexer.pushToken(token, 'NAME');
-                        }
-                    }
-                }
-                symbols.text = lexer.matchAll();
-                if (symbols.text.length > 0)
-                    lexer.pushToken(symbols.text, `METADATATEXT`);
-            } else if (lexer.match(/^;/)) {
-                symbols.sliceSeparator = true;
-                lexer.pushToken(';', 'COLOR FADECOLOR');
-            } else {
-                symbols.gridline = '';
-                while (true) {
-                    if (state.commentStyle == '()' && lexer.peek() == '(')
-                        break;
-                    if (token = lexer.match(/^\S/, !state.case_sensitive)) {
-                        symbols.gridline += token;
-                        const kind = state.abbrevNames.includes(token) ? 'LEVEL' : 'ERROR';
-                        if (kind == 'ERROR')
-                            logError(`Key "${errorCase(token)}" not found. Do you need to add it to the legend, or define a new object?`, state.lineNumber);
-                        lexer.pushToken(token, kind);
-                    } else break;
-                }
-            }
-
-            lexer.matchEol();
-            return true;
-        }
-
-        function setState() {
-            let toplevel = state.threeDimensionLevels.at(-1);
-            if (toplevel && toplevel.length == 0) {
-                state.threeDimensionLevels.pop();
-                toplevel = null;
-            }
-
-            const cmds = [ 'goto', 'level', 'link', 'message', 'section', 'title', 'input' ];
-            if (cmds.includes(symbols.start))
-                state.threeDimensionLevels.push([ symbols.start, symbols.text, state.lineNumber, symbols.link ]);
-            else {
-                const line = symbols.sliceSeparator ? ';' : symbols.gridline;
-                if (toplevel == null || cmds.includes(toplevel[0]))
-                    state.threeDimensionLevels.push([ state.lineNumber, null, line ]);
-                else
-                    toplevel.push(line);
-            }
-        }
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
     // called as per CodeMirror API
     // return value is an object containing a specific set of named functions
     return {
@@ -2012,7 +1882,6 @@ var codeMirrorFn = function() {
                 case_sensitive : state.case_sensitive,
 
                 levels: state.levels.map(p => p.slice()),
-                threeDimensionLevels: state.threeDimensionLevels.map(p => p.slice()),
 
                 STRIDE_OBJ : state.STRIDE_OBJ,
                 STRIDE_MOV : state.STRIDE_MOV
@@ -2136,7 +2005,6 @@ var codeMirrorFn = function() {
                         if (state.objects[state.objects_candname].colors.length <= 10 
                           && !state.objects[state.objects_candname].vector 
                           && !stream.match(/^[.\d]/, false)
-                          && !(isThreeDimensionsEnabled(state) && stream.match(/^;/, false))
                           && !stream.match(reg_objmodi, false))
                             state.objects_section = 0;
                     }
@@ -2174,10 +2042,6 @@ var codeMirrorFn = function() {
                     case 4:
                         if (stream.match(reg_objmodi, false)) {
                             state.objects_section = 5; // fall through
-                        } else if (isThreeDimensionsEnabled(state) && stream.match(/^;/, false)) {
-                            state.current_line_wip_array.push(...parseObjectSprite3SliceSeparator(stream, state));
-                            state.objects_section = 4;
-                            return flushToken();
                         } else {
                             stream.string = state.mixedCase;
                             const tokens = state.objects[state.objects_candname].vector 
@@ -2243,10 +2107,10 @@ var codeMirrorFn = function() {
                             } else if (state.tokenIndex == 0 && m.toLowerCase() == 'subroutine') {
                                 state.tokenIndex = -4;
                                 return 'BRACKET';
-                            } else if (state.tokenIndex === 0 && isRulePrefixDirectionToken(state, m)) {
+                            } else if (state.tokenIndex === 0 && reg_ruledirectionindicators.exec(m)) {
                                 stream.match(/[\p{Z}\s]*/u, true);
                                 return 'DIRECTION';
-                            } else if (state.tokenIndex === 1 && (isRuleDirectionToken(state, m) || Object.hasOwn(state.tags, m))) {
+                            } else if (state.tokenIndex === 1 && (directions_table.includes(m)) || Object.hasOwn(state.tags, m)) {
                                 stream.match(/[\p{Z}\s]*/u, true);
                                 return 'DIRECTION';
                             } else {
@@ -2285,11 +2149,10 @@ var codeMirrorFn = function() {
                 }
                 case 'levels': {
                     stream.string = state.mixedCase;
-                    state.current_line_wip_array = shouldRouteLevelsTo3D(state)
-                        ? parseThreeDimensionLevel(stream, state)
-                        : parseLevel(stream, state);
+                    state.current_line_wip_array = parseLevel(stream, state);
                     return flushToken();
                 }
+                        
                 default: { 
                     throw 'case!';
                 }
@@ -2365,7 +2228,6 @@ var codeMirrorFn = function() {
                 abbrevNames: [],
 
                 levels: [[]],
-                threeDimensionLevels: [[]],
 
                 tags: { // to match P:S
                     directions: [ 'up', 'right', 'down', 'left' ], 
@@ -2381,27 +2243,3 @@ var codeMirrorFn = function() {
 };
 
 window.CodeMirror.defineMode('puzzle', codeMirrorFn);
-
-function isThreeDimensionsEnabled(state) {
-    if (!state || !state.metadata)
-        return false;
-    if (Array.isArray(state.metadata))
-        return state.metadata.includes("three_dimensions");
-    return !!state.metadata.three_dimensions;
-}
-
-function shouldRouteLevelsTo3D(state) {
-    return state && state.section === "levels" && isThreeDimensionsEnabled(state);
-}
-
-function isRuleDirectionToken(state, token) {
-    if (directions_table.includes(token))
-        return true;
-    return isThreeDimensionsEnabled(state) && directions3d_table.includes(token);
-}
-
-function isRulePrefixDirectionToken(state, token) {
-    if (rule_prefix_directions.includes(token))
-        return true;
-    return isThreeDimensionsEnabled(state) && (token === "front" || token === "back");
-}
