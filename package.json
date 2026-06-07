@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "test": "npm run test:3d",
+    "test:3d": "node test/levels3d.test.js && node test/cell_match3d.test.js && node test/cell_masks_2d_parity.test.js && node test/natural_2d_process_preservation.test.js && node test/conformance_architecture.test.js && node test/compiler_lowering_2d_preservation.test.js && node test/compiler_lowering_2d_parity.test.js && node test/command_queue.test.js && node test/command_queue_2d_parity.test.js && node test/rule_grouping.test.js && node test/rule_finalization.test.js && node test/rule_application.test.js && node test/turn_runtime.test.js && node test/random_rule_groups_2d_parity.test.js && node test/rule_groups_2d_parity.test.js && node test/global_rule_2d_parity.test.js && node test/ellipsis_2d_parity.test.js && node test/resolve_movements_2d_parity.test.js && node test/sfx_artifacts_2d_parity.test.js && node test/runtime_metadata_twiddling_2d_parity.test.js && node test/win_conditions_2d_parity.test.js && node test/semantic_carrier_3d_parity.test.js && node test/ps_metadata_slots.test.js && node test/again_loop.test.js && node test/game_runtime3d.test.js && node test/game_runtime3d_2d_parity.test.js && node test/full_turn_2d_parity.test.js && node test/e2e3d.test.js && node test/rule_frames3d.test.js && node test/rules3d.test.js && node test/runtime3d.test.js && node test/slots3d.test.js && node test/turn3d.test.js && node test/compiler_host_prepare.test.js && node test/play_host3d.test.js && node test/inputoutput3d.test.js && node test/render_frame3d.test.js && node test/editor_3d_integration.test.js && node test/editor_3d_level_editor.test.js && node test/editor_3d_sprite_palette.test.js && node test/editor_3d_non_isomorphism_audit.test.js && node test/editor_3d_playable_contract.test.js",
+    "test:2d-preservation": "node test/natural_2d_process_preservation.test.js"
+  },
   "dependencies": {
     "compress-images": "^2.0.5",
     "concat": "^1.0.3",

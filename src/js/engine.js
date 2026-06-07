@@ -649,6 +649,33 @@ function drawMessageScreen(message) {
 
 var loadedLevelSeed=0;
 
+function getExternalPlayableHosts() {
+	if (typeof PuzzleExternalPlayableHosts !== "undefined")
+		return PuzzleExternalPlayableHosts;
+	if (typeof window !== "undefined" && window.PuzzleExternalPlayableHosts)
+		return window.PuzzleExternalPlayableHosts;
+	if (typeof globalThis !== "undefined" && globalThis.PuzzleExternalPlayableHosts)
+		return globalThis.PuzzleExternalPlayableHosts;
+	return [];
+}
+
+function loadExternalPlayableLevelFromLevelDat(state, leveldat, randomseed, clearinputhistory) {
+	const hosts = getExternalPlayableHosts();
+	for (let i = 0; i < hosts.length; i++) {
+		const host = hosts[i];
+		if (!host || typeof host.canPlayLevel !== "function" || !host.canPlayLevel(state, leveldat))
+			continue;
+		if (typeof host.startPlayableLevel !== "function")
+			throw new Error("External playable host is missing startPlayableLevel().");
+		host.startPlayableLevel(state, curLevelNo, {
+			randomseed,
+			clearInputHistory: clearinputhistory
+		});
+		return true;
+	}
+	return false;
+}
+
 // workhorse to load and setup a new level
 function loadLevelFromLevelDat(state,leveldat,randomseed,clearinputhistory) {	
 	if (debugSwitch.includes('load')) console.log(`loadLevelFromLevelDat()`, leveldat);
@@ -685,13 +712,16 @@ function loadLevelFromLevelDat(state,leveldat,randomseed,clearinputhistory) {
 		messageselected = false;
       	canvasResize();
       	clearInputHistory();
-    } else if (leveldat.target != undefined) {  // could be zero
+	} else if (leveldat.target != undefined) {  // could be zero
 		if (verbose_logging)
 			consolePrint(`GOTO (${htmlJump(leveldat.lineNumber)})`, true, leveldat.lineNumber);
-      	// This "level" is actually a goto.
-      	//tryPlayGotoSound();
-      	setSectionSolved(state.levels[curLevelNo].section)
-      	gotoLevel(leveldat.target);
+	  	// This "level" is actually a goto.
+	  	//tryPlayGotoSound();
+	  	setSectionSolved(state.levels[curLevelNo].section)
+	  	gotoLevel(leveldat.target);
+	} else if (loadExternalPlayableLevelFromLevelDat(state, leveldat, randomseed, clearinputhistory)) {
+		// External hosts own only the playable payload. Browser flow stays here.
+		twiddleMetadataExtras();
     } else {
       	titleMode=0;
       	textMode=false;

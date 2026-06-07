@@ -29,6 +29,46 @@ const { Compress } = require('gzipper');
 const htmlminify = require('html-minifier-terser').minify;
 const glob = require("glob")
 
+const LOCAL_SCRIPT_TAG_RE = /<script src="js\/[A-Za-z0-9_\/.-]*\.js"><\/script>/g;
+const STANDALONE_PLAY_CSS_RE = /<link rel="stylesheet" href="css\/play\.css">/g;
+const STANDALONE_THREE_MODULE_URL_SCRIPT_RE = /<script>\s*window\.PUZZLE3D_THREE_MODULE_URL = new URL\("js\/vendor\/three\.module\.min\.js", document\.baseURI\)\.href;\s*<\/script>/g;
+
+function removeStandaloneRawScriptsForCompiledBundle(html) {
+    return html.replace(LOCAL_SCRIPT_TAG_RE, "");
+}
+
+function inlineStandaloneThreeModule(html) {
+    return html.replace(STANDALONE_THREE_MODULE_URL_SCRIPT_RE, function() {
+        const moduleSource = fs.readFileSync("./src/js/vendor/three.module.min.js", "utf8");
+        return "<script>\n" + toClassicThreeModuleBridge(moduleSource) + "\n</script>";
+    });
+}
+
+function toClassicThreeModuleBridge(moduleSource) {
+    const exportMatch = moduleSource.match(/export\{([\s\S]*)\};?\s*$/);
+    if (!exportMatch)
+        throw new Error("Could not find the Three.js module export list.");
+
+    const body = moduleSource.slice(0, exportMatch.index);
+    const exportsObject = exportMatch[1].split(",").map(classicThreeExportEntry).join(",\n");
+    return [
+        "(function() {",
+        "var __PuzzleScriptNextThreeRoot = typeof window !== \"undefined\" ? window : globalThis;",
+        body,
+        "__PuzzleScriptNextThreeRoot.THREE = {",
+        exportsObject,
+        "};",
+        "})();"
+    ].join("\n");
+}
+
+function classicThreeExportEntry(entry) {
+    const parts = entry.trim().split(/\s+as\s+/);
+    if (parts.length === 2)
+        return JSON.stringify(parts[1]) + ": " + parts[0];
+    return JSON.stringify(parts[0]) + ": " + parts[0];
+}
+
 //print all paths to all modules above
 var lines = fs.readFileSync(".build/buildnumber.txt", encoding = 'utf-8');
 var buildnum = parseInt(lines);
@@ -109,6 +149,17 @@ ncp("./src", "./bin/", function (err) {
             fs.mkdirSync('./bin/js');
             fs.mkdirSync('./bin/css');
 
+            const vendorJsDir = "./src/js/vendor";
+            if (fs.existsSync(vendorJsDir)) {
+                fs.mkdirSync("./bin/js/vendor", { recursive: true });
+                for (const file of fs.readdirSync(vendorJsDir)) {
+                    const src = path.join(vendorJsDir, file);
+                    if (fs.lstatSync(src).isFile()) {
+                        fs.copyFileSync(src, path.join("./bin/js/vendor", file));
+                    }
+                }
+            }
+
             console.log('compressing css');
 
             await concat(["./src/css/docs.css",
@@ -158,17 +209,51 @@ ncp("./src", "./bin/", function (err) {
                 "./src/js/codemirror/anyword-hint.js",
                 "./src/js/codemirror/comment.js",
                 "./src/js/colors.js",
-                "./src/js/graphics.js",
-                "./src/js/inputoutput.js",
+                "./src/js/sprite_projection3d.js",
+                "./src/js/graphics3d.js",
+                "./src/js/inputoutput3d.js",
+                "./src/js/level_editor3d.js",
                 "./src/js/mobile.js",
                 "./src/js/buildStandalone.js",
+                "./src/js/command_queue.js",
+                "./src/js/random_rule_groups.js",
+                "./src/js/rule_groups.js",
+                "./src/js/rule_grouping.js",
+                "./src/js/rule_finalization.js",
+                "./src/js/rule_lowering.js",
+                "./src/js/rule_scan.js",
+                "./src/js/rule_replacements.js",
+                "./src/js/rule_application.js",
+                "./src/js/cell_masks.js",
+                "./src/js/sfx_artifacts.js",
+                "./src/js/movement_resolution.js",
+                "./src/js/runtime_metadata_twiddling.js",
+                "./src/js/win_conditions.js",
+                "./src/js/again_loop.js",
+                "./src/js/turn_runtime.js",
+                "./src/js/session_runtime.js",
                 "./src/js/engine.js",
-                "./src/js/parser.js",
+                "./src/js/parser3d.js",
+                "./src/js/levels3d.js",
+                "./src/js/rule_frames3d.js",
+                "./src/js/cell_match3d.js",
+                "./src/js/rules3d.js",
+                "./src/js/ps_metadata_slots.js",
+                "./src/js/slots3d.js",
+                "./src/js/runtime3d.js",
+                "./src/js/turn3d.js",
+                "./src/js/game_runtime3d.js",
+                "./src/js/render_frame_contract3d.js",
+                "./src/js/render_frame3d.js",
+                "./src/js/tween_semantics.js",
+                "./src/js/three_renderer3d.js",
+                "./src/js/play_host3d.js",
+                "./src/js/compiler_3d.js",
+                "./src/js/compiler3d.js",
                 "./src/js/editor.js",
-                "./src/js/compiler.js",
                 "./src/js/console.js",
                 "./src/js/soundbar.js",
-                "./src/js/toolbar.js",
+                "./src/js/toolbar3d.js",
                 "./src/js/layout.js",
                 "./src/js/addlisteners.js",
                 "./src/js/addlisteners_editor.js",
@@ -202,11 +287,45 @@ ncp("./src", "./bin/", function (err) {
                 "./src/js/sfxr.js",
                 "./src/js/codemirror/stringstream.js",
                 "./src/js/colors.js",
-                "./src/js/graphics.js",
+                "./src/js/sprite_projection3d.js",
+                "./src/js/graphics3d.js",
+                "./src/js/command_queue.js",
+                "./src/js/random_rule_groups.js",
+                "./src/js/rule_groups.js",
+                "./src/js/rule_grouping.js",
+                "./src/js/rule_finalization.js",
+                "./src/js/rule_lowering.js",
+                "./src/js/rule_scan.js",
+                "./src/js/rule_replacements.js",
+                "./src/js/rule_application.js",
+                "./src/js/cell_masks.js",
+                "./src/js/sfx_artifacts.js",
+                "./src/js/movement_resolution.js",
+                "./src/js/runtime_metadata_twiddling.js",
+                "./src/js/win_conditions.js",
+                "./src/js/again_loop.js",
+                "./src/js/turn_runtime.js",
+                "./src/js/session_runtime.js",
                 "./src/js/engine.js",
-                "./src/js/parser.js",
-                "./src/js/compiler.js",
-                "./src/js/inputoutput.js",
+                "./src/js/parser3d.js",
+                "./src/js/levels3d.js",
+                "./src/js/rule_frames3d.js",
+                "./src/js/cell_match3d.js",
+                "./src/js/rules3d.js",
+                "./src/js/ps_metadata_slots.js",
+                "./src/js/slots3d.js",
+                "./src/js/runtime3d.js",
+                "./src/js/turn3d.js",
+                "./src/js/game_runtime3d.js",
+                "./src/js/render_frame_contract3d.js",
+                "./src/js/render_frame3d.js",
+                "./src/js/tween_semantics.js",
+                "./src/js/three_renderer3d.js",
+                "./src/js/play_host3d.js",
+                "./src/js/compiler_3d.js",
+                "./src/js/compiler3d.js",
+                "./src/js/inputoutput3d.js",
+                "./src/js/level_editor3d.js",
                 "./src/js/mobile.js"];
 
             corpus = {};
@@ -252,7 +371,7 @@ ncp("./src", "./bin/", function (err) {
             console.log("inlining standalone template")
 
             //src one first:
-            var standalone_raw = fs.readFileSync("./src/standalone.html", 'utf8');
+            var standalone_raw = inlineStandaloneThreeModule(fs.readFileSync("./src/standalone.html", 'utf8'));
 
             webResourceInliner.html({
                 fileContent: standalone_raw,
@@ -267,7 +386,8 @@ ncp("./src", "./bin/", function (err) {
                 });
 
             //then bin one:
-            standalone_raw = standalone_raw.replace(/<script src="js\/[A-Za-z0-9_\/-]*\.js"><\/script>/g, "");
+            standalone_raw = removeStandaloneRawScriptsForCompiledBundle(standalone_raw);
+            standalone_raw = standalone_raw.replace(STANDALONE_PLAY_CSS_RE, "");
             standalone_raw = standalone_raw.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts_play_compiled.js"><\/script>');
             webResourceInliner.html({
                 fileContent: standalone_raw,

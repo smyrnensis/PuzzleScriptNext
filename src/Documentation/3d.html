@@ -15,11 +15,6 @@
     <!-- Custom styles for this template -->
     <link href="css/bootstrap-theme.css" rel="stylesheet">
 
-    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-      <script src="../../assets/js/html5shiv.js"></script>
-      <script src="../../assets/js/respond.min.js"></script>
-    <![endif]-->
   </head>
 
   <body>
@@ -64,6 +59,9 @@
 <p>3D mode extends ordinary PuzzleScript with one extra spatial axis.
 Rules, objects, legends, collision layers, win conditions, commands, tags, mappings, and level flow keep their normal PuzzleScript meanings.
 The new pieces are the <b>three_dimensions</b> prelude flag, 3D directions, 3D level slices, 3D sprites, and camera metadata.</p>
+
+<p>The ordinary 2D runtime is the behavior oracle for non-spatial PuzzleScript semantics.
+3D support should conform to that behavior through parity tests rather than requiring broad 2D runtime rewrites.</p>
 
 <h2>Starting a 3D Game</h2>
 

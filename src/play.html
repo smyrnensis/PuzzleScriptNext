@@ -11,7 +11,8 @@ body {
 	touch-action: none;
 }
 
-#gameCanvas {
+#gameCanvas,
+#gameCanvas3D {
   position:absolute;
   top: 0px;
   left: 0px;
@@ -254,11 +255,48 @@ a {
 <script src="js/sfxr.js"></script>
 <script src="js/codemirror/stringstream.js"></script>
 <script src="js/colors.js"></script>
-<script src="js/graphics.js"></script>
+<script src="js/sprite_projection3d.js"></script>
+<script src="js/graphics3d.js"></script>
+<script src="js/command_queue.js"></script>
+<script src="js/random_rule_groups.js"></script>
+<script src="js/rule_groups.js"></script>
+<script src="js/rule_grouping.js"></script>
+<script src="js/rule_finalization.js"></script>
+<script src="js/rule_lowering.js"></script>
+<script src="js/rule_scan.js"></script>
+<script src="js/rule_replacements.js"></script>
+<script src="js/rule_application.js"></script>
+<script src="js/cell_masks.js"></script>
+<script src="js/sfx_artifacts.js"></script>
+<script src="js/movement_resolution.js"></script>
+<script src="js/runtime_metadata_twiddling.js"></script>
+<script src="js/win_conditions.js"></script>
+<script src="js/again_loop.js"></script>
+<script src="js/turn_runtime.js"></script>
+<script src="js/session_runtime.js"></script>
 <script src="js/engine.js"></script>
-<script src="js/parser.js"></script>
-<script src="js/compiler.js"></script>
-<script src="js/inputoutput.js"></script>
+<script src="js/parser3d.js"></script>
+<script src="js/levels3d.js"></script>
+<script src="js/rule_frames3d.js"></script>
+<script src="js/cell_match3d.js"></script>
+<script src="js/rules3d.js"></script>
+<script src="js/ps_metadata_slots.js"></script>
+<script src="js/slots3d.js"></script>
+<script src="js/runtime3d.js"></script>
+<script src="js/turn3d.js"></script>
+<script src="js/game_runtime3d.js"></script>
+<script src="js/render_frame_contract3d.js"></script>
+<script src="js/render_frame3d.js"></script>
+<script src="js/tween_semantics.js"></script>
+<script src="js/three_renderer3d.js"></script>
+<script>
+window.PUZZLE3D_THREE_MODULE_URL = new URL("js/vendor/three.module.min.js", document.baseURI).href;
+</script>
+<script src="js/play_host3d.js"></script>
+<script src="js/compiler_3d.js"></script>
+<script src="js/compiler3d.js"></script>
+<script src="js/inputoutput3d.js"></script>
+<script src="js/level_editor3d.js"></script>
 <script src="js/mobile.js"></script>
 
 <script>
@@ -339,29 +377,30 @@ function tryLoadFile(id, fileName) {
 }
 
 function prepareForPlay(hackArg, code) {
-    compile(["restart"],code);
+    var startResult = compile(["restart"], code, null);
+    Promise.resolve(startResult).then(function(compiledState) {
+        if (!compiledState)
+            return;
+        finishPrepareForPlay(hackArg, compiledState);
+    }).catch(function(err) {
+        displayError(err && err.message ? err.message : String(err));
+    });
+}
 
-    if (state.metadata.homepage!==undefined) {
-        var homepage=state.metadata.homepage;
+function finishPrepareForPlay(hackArg, compiledState) {
+    if (compiledState.metadata.homepage!==undefined) {
+        var homepage=compiledState.metadata.homepage;
         var homepageLink = document.getElementById("homepagelink");
-        // refers to a specific simple game -- with an embedded exploit!
-        // if (id==="2fe3172d2b9fe684977d184f1b6226d5"){
-        //     // https://github.com/increpare/PuzzleScript/issues/829
-        //     // Supporting vulnerability on legacy grounds to enable Pushing It:
-        //     // https://www.puzzlescript.net/play.html?p=2fe3172d2b9fe684977d184f1b6226d5
-        //     homepageLink.innerHTML=strip_http(homepage);
-        // } else {
         //sanitize tags from title   
         homepageLink.textContent=strip_http(homepage);
-        // }
         
         if (!homepage.match(/^https?:\/\//)) {
             homepage = "https://" + homepage;
         }
         homepageLink.href = homepage;
     }
-    if (state.metadata.title!==undefined) {
-        var title=state.metadata.title;
+    if (compiledState.metadata.title!==undefined) {
+        var title=compiledState.metadata.title;
         var gametitle = document.getElementById("gametitle");
         gametitle.textContent=title;
         window.document.title=title+" - PuzzleScriptNext Game";
