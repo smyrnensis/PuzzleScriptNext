@@ -1,5 +1,4 @@
 title ladder
-author test
 three_dimensions
 orthographic_camera
 camera_angle 10 60
