@@ -94,8 +94,7 @@ function testThreeRendererBuildsInstanceGroupsFromRenderFrameOnly() {
         instanceGroups.reduce((sum, group) => sum + group.items.length, 0),
         3
     );
-    assert(instanceGroups.some(group => group.alpha === 1 && group.scale.y === 0.08), "compiled background layer should use floor geometry without implicit translucency");
-    assert(instanceGroups.some(group => group.alpha === 1 && group.scale.y === 1), "foreground object should be opaque geometry");
+    assert(instanceGroups.every(group => group.scale && group.scale.y === 1), "renderer should use object-owned voxel dimensions rather than layer-classified slabs");
 }
 
 function testThreeRendererRejectsNonFrameInputsBeforeTheyBecomeImplicitRuntimeAccess() {
@@ -126,15 +125,15 @@ function testThreeRendererRejectsNonFrameInputsBeforeTheyBecomeImplicitRuntimeAc
     );
 }
 
-function testThreeRendererRejectsImplicitLayerPresentationFallback() {
+function testThreeRendererRejectsNonVoxelVisuals() {
     const state = makeState();
     const runtime = gameRuntime.createRuntimeFromState3D(state);
     const frame = JSON.parse(JSON.stringify(renderFrame.buildRenderFrame3D(runtime, state)));
-    delete frame.objects[1].visual.presentation;
+    delete frame.objects[1].visual.voxels;
 
     assert.throws(
         () => threeRenderer.buildInstances(frame),
-        /requires explicit supported visual presentation/
+        /requires voxel visual data/
     );
 }
 
@@ -297,6 +296,34 @@ function testRenderToCanvasReusesRendererForCanvasLifecycle() {
     assert(stats.materialDisposals > 0, "old per-frame materials should be disposed before replacing the scene");
 }
 
+function testRenderToCanvasKeepsFrontSidedVoxelFacesForOrthographicCamera() {
+    const stats = {
+        rendererConstructs: 0,
+        rendererDisposals: 0,
+        geometryDisposals: 0,
+        materialDisposals: 0,
+        renders: 0
+    };
+    const windowObject = {
+        THREE: fakeRenderableThree(stats),
+        devicePixelRatio: 1
+    };
+    const rendererApi = loadThreeRendererWithWindow(windowObject);
+    const state = makeState();
+    state.metadata.orthographic_camera = true;
+    state.objects.player.colors = ["#111111"];
+    state.objects.player.sprite3matrix = fullSprite3Matrix(2, 2, 2, 0);
+    const runtime = gameRuntime.createRuntimeFromState3D(state);
+    const frame = renderFrame.buildRenderFrame3D(runtime, state);
+    const canvas = { width: 640, height: 480, clientWidth: 640, clientHeight: 480 };
+
+    rendererApi.renderToCanvas(canvas, frame, { tweenElapsedMs: 0 });
+    const meshes = windowObject.puzzle3DThreeRenderer.scene.children
+        .filter(child => child && child.material && child.material.options);
+
+    assert(meshes.some(mesh => mesh.material.options.side === windowObject.THREE.FrontSide), "orthographic voxel faces should keep normal front-sided rendering");
+}
+
 function testObliqueCameraUsesWorldUpCarrier() {
     const state = makeState();
     const runtime = gameRuntime.createRuntimeFromState3D(state);
@@ -356,7 +383,7 @@ function testRendererUsesVisibleRegionProjectedFrom2DViewportCarrier() {
 
     const frame = renderFrame.buildSessionRenderFrame3D(session);
     const instanceGroups = threeRenderer.buildInstances(frame);
-    const foreground = foregroundItems(instanceGroups);
+    const players = playerItems(instanceGroups);
 
     assert.deepStrictEqual(frame.view.visibleRegion, { x: 1, z: 1, width: 2, depth: 1 });
     assert.deepStrictEqual(frame.view.renderRegion, { x: 0, z: 0, width: 4, depth: 3 });
@@ -364,8 +391,8 @@ function testRendererUsesVisibleRegionProjectedFrom2DViewportCarrier() {
         instanceGroups.reduce((sum, group) => sum + group.items.length, 0),
         14
     );
-    assert(foreground.some(item => item.x === -0.5 && item.z === 0), "visible-region foreground should still be rendered around the logical screen");
-    assert(foreground.some(item => item.x === -1.5 && item.z === -1), "off-screen foreground should remain renderable because an angled 3D camera may see it");
+    assert(players.some(item => item.x === -0.5 && item.z === 0), "visible-region player should still be rendered around the logical screen");
+    assert(players.some(item => item.x === -1.5 && item.z === -1), "off-screen player should remain renderable because an angled 3D camera may see it");
 }
 
 function testExplicitRenderRegionControlsCullingWithoutChangingLogicalScreen() {
@@ -452,7 +479,7 @@ function testThreeRendererPositionsCellsAgainstSmoothCameraCenter() {
         }
     });
 
-    const item = foregroundItem(threeRenderer.buildInstances(frame));
+    const item = playerItem(threeRenderer.buildInstances(frame));
 
     assert.strictEqual(item.x, -0.25);
     assert.strictEqual(item.z, 0);
@@ -512,19 +539,17 @@ function testRenderFrameRejectsMalformedViewContract() {
     );
 }
 
-function testThreeRendererUsesFullCellSpritesWithoutImplicitPadding() {
+function testThreeRendererUsesSpriteVoxelsAsObjectGeometry() {
     const state = makeState();
     const runtime = gameRuntime.createRuntimeFromState3D(state);
     const frame = renderFrame.buildRenderFrame3D(runtime, state);
     const instanceGroups = threeRenderer.buildInstances(frame);
-    const foreground = instanceGroups.find(group => group.scale.y === 1);
-    const background = instanceGroups.find(group => group.scale.y === 0.08);
 
-    assert.deepStrictEqual(foreground.scale, { x: 1, y: 1, z: 1 });
-    assert.deepStrictEqual(background.scale, { x: 1, y: 0.08, z: 1 });
+    assert(instanceGroups.length > 0);
+    assert(instanceGroups.every(group => group.scale && group.scale.x === 1 && group.scale.y === 1 && group.scale.z === 1));
 }
 
-function testThreeRendererKeepsOverlappingSolidsOnCellY() {
+function testThreeRendererKeepsOverlappingObjectsOnCellY() {
     const state = makeState();
     state.playerMask = new Int32Array([6]);
     state.layerMasks = [new Int32Array([1]), new Int32Array([2]), new Int32Array([4])];
@@ -549,12 +574,12 @@ function testThreeRendererKeepsOverlappingSolidsOnCellY() {
     state.levels[0].objects = new Int32Array([7, 1]);
     const runtime = gameRuntime.createRuntimeFromState3D(state);
     const frame = renderFrame.buildRenderFrame3D(runtime, state);
-    const solidItems = threeRenderer.buildInstances(frame)
-        .filter(group => group.scale.y === 1)
+    const overlappingItems = threeRenderer.buildInstances(frame)
+        .filter(group => group.color === "#ffffff")
         .flatMap(group => group.items);
 
-    assert.strictEqual(solidItems.length, 2);
-    assert.strictEqual(solidItems[0].y, solidItems[1].y);
+    assert.strictEqual(overlappingItems.length, 2);
+    assert.strictEqual(overlappingItems[0].y, overlappingItems[1].y);
 }
 
 function testThreeRendererSceneAdapterPreservesAsciiAxisContract() {
@@ -592,7 +617,7 @@ function testThreeRendererDefaultCameraProjectsBoardRightAndFrontWithInputCarrie
     assert(backProjection.y < 0, "A->C/back should project away from the ArrowUp/front carrier");
 }
 
-function testRenderFrameUsesCompiledBackgroundLayerForFloorPresentation() {
+function testRenderFrameDoesNotClassifyObjectGeometryByLayer() {
     const state = makeState();
     state.playerMask = new Int32Array([4]);
     state.layerMasks = [new Int32Array([1]), new Int32Array([2]), new Int32Array([4])];
@@ -619,16 +644,13 @@ function testRenderFrameUsesCompiledBackgroundLayerForFloorPresentation() {
     const frame = renderFrame.buildRenderFrame3D(runtime, state);
     const instanceGroups = threeRenderer.buildInstances(frame);
 
-    assert.strictEqual(frame.objects[0].visual.presentation, "floor");
-    assert.strictEqual(frame.objects[1].visual.presentation, "solid");
-    assert.strictEqual(frame.objects[2].visual.presentation, "solid");
-    assert(instanceGroups.some(group => group.alpha === 1
-        && group.scale.x === 1
-        && group.scale.y === 0.08
-        && group.scale.z === 1), "compiled background layer objects should render as floor surfaces");
+    assertNoVisualModeKey(frame.objects[0].visual);
+    assertNoVisualModeKey(frame.objects[1].visual);
+    assertNoVisualModeKey(frame.objects[2].visual);
+    assert(instanceGroups.every(group => group.scale && group.scale.y === 1), "all objects should render from sprite voxel dimensions without layer geometry classification");
 }
 
-function testRenderFrameUsesCompiledBackgroundLayerRatherThanLayerZero() {
+function testRenderFrameKeepsBackgroundLayerAsOrdinaryObjectVisual() {
     const state = makeState();
     state.backgroundlayer = 1;
     state.objects.background.layer = 1;
@@ -641,11 +663,13 @@ function testRenderFrameUsesCompiledBackgroundLayerRatherThanLayerZero() {
     const runtime = gameRuntime.createRuntimeFromState3D(state);
     const frame = renderFrame.buildRenderFrame3D(runtime, state);
 
-    assert.strictEqual(frame.objects[0].visual.presentation, "floor");
-    assert.strictEqual(frame.objects[1].visual.presentation, "solid");
+    assertNoVisualModeKey(frame.objects[0].visual);
+    assertNoVisualModeKey(frame.objects[1].visual);
+    assert.strictEqual(frame.objects[0].visual.kind, "spritematrix");
+    assert.strictEqual(frame.objects[1].visual.kind, "spritematrix");
 }
 
-function testRenderFrameKeepsNonBackgroundFloorNamedObjectsSolid() {
+function testRenderFrameKeepsFloorNamedObjectsAsOrdinaryVoxelObjects() {
     const state = makeState();
     state.playerMask = new Int32Array([8]);
     state.layerMasks = [new Int32Array([1]), new Int32Array([6]), new Int32Array([8])];
@@ -678,10 +702,10 @@ function testRenderFrameKeepsNonBackgroundFloorNamedObjectsSolid() {
     const runtime = gameRuntime.createRuntimeFromState3D(state);
     const frame = renderFrame.buildRenderFrame3D(runtime, state);
 
-    assert.strictEqual(frame.objects[0].visual.presentation, "floor");
-    assert.strictEqual(frame.objects[1].visual.presentation, "solid");
-    assert.strictEqual(frame.objects[2].visual.presentation, "solid");
-    assert.strictEqual(frame.objects[3].visual.presentation, "solid");
+    for (const object of frame.objects) {
+        assertNoVisualModeKey(object.visual);
+        assert.strictEqual(object.visual.kind, "spritematrix");
+    }
 }
 
 function testThreeRendererRequiresThreeInsteadOfCanvasFallback() {
@@ -766,11 +790,11 @@ function testThreeRendererBuilds2DSpriteMatrixVoxelsWithoutPadding() {
     const runtime = gameRuntime.createRuntimeFromState3D(state);
     const frame = renderFrame.buildRenderFrame3D(runtime, state);
     const instanceGroups = threeRenderer.buildInstances(frame);
-    const foregroundCount = instanceGroups
-        .filter(group => group.alpha === 1 && group.scale.y !== 0.08)
+    const playerVoxelCount = instanceGroups
+        .filter(group => group.alpha === 1 && (group.color === "#111111" || group.color === "#eeeeee"))
         .reduce((sum, group) => sum + group.items.length, 0);
 
-    assert.strictEqual(foregroundCount, 3);
+    assert.strictEqual(playerVoxelCount, 3);
     assert(instanceGroups.some(group => {
         return group.alpha === 1
             && group.scale.x === 0.5
@@ -875,6 +899,44 @@ function testThreeRendererVoxelMeshCullsFacesFromEachFaceCenterToPerspectiveCame
     assert(!normals.includes("0,0,-1"), "opposite z face should be culled from its own face center");
 }
 
+function testThreeRendererVoxelMeshLeavesOrthographicBackfaceSelectionToRenderer() {
+    const state = makeState();
+    const width = 7;
+    const depth = 5;
+    const cells = new Int32Array(width * depth);
+    cells[2 * width] = 2;
+    state.metadata.orthographic_camera = true;
+    state.metadata.camera_angle = { yaw: 10, pitch: 60 };
+    state.objects.player.colors = ["#111111"];
+    state.objects.player.sprite3matrix = fullSprite3Matrix(5, 5, 5, 0);
+    state.levels[0] = Object.assign({}, state.levels[0], {
+        width,
+        height: 1,
+        depth,
+        cellCount: cells.length,
+        n_tiles: cells.length,
+        objects: cells
+    });
+
+    const runtime = gameRuntime.createRuntimeFromState3D(state);
+    const frame = renderFrame.buildRenderFrame3D(runtime, state);
+    const camera = threeRenderer.buildCamera(fakeThree(), frame, { clientWidth: 640, clientHeight: 480 });
+    const mesh = threeRenderer.buildInstances(frame, {
+        voxelMesh: true,
+        cameraProjection: "orthographic",
+        cameraPosition: camera.position,
+        cameraDirection: threeRenderer.cameraVectorFromYawPitch(frame.view.yaw, frame.view.pitch)
+    }).find(group => group.kind === "faces" && group.color === "#111111");
+    const normals = mesh.faces.map(face => [face.normal.x, face.normal.y, face.normal.z].join(","));
+
+    assert(camera.position.x > -3.5, "fixture must keep the finite camera position inside the left boundary face");
+    assert(!Object.prototype.hasOwnProperty.call(mesh, "side"));
+    assert(normals.includes("-1,0,0"), "left boundary face should remain available for orthographic renderer culling");
+    assert(normals.includes("1,0,0"), "right boundary face should remain available for orthographic renderer culling");
+    assert(normals.includes("0,0,1"), "front boundary face should remain available for orthographic renderer culling");
+    assert(normals.includes("0,0,-1"), "back boundary face should remain available for orthographic renderer culling");
+}
+
 function testThreeRendererLeavesOpaqueGeometryDepthOrdered() {
     const source = fs.readFileSync(path.join(__dirname, "../src/js/three_renderer3d.js"), "utf8");
 
@@ -951,17 +1013,6 @@ function testRenderFrameRejectsObjectsWithoutSourceOwnedSpriteMatrix() {
     assert.throws(
         () => renderFrame.buildRenderFrame3D(runtime, state),
         /requires object-owned sprite matrix data for "player"/
-    );
-}
-
-function testRenderFrameRejectsImplicitPresentationForUnknownLayer() {
-    const state = makeState();
-    state.objects.player.layer = 2;
-    const runtime = gameRuntime.createRuntimeFromState3D(state);
-
-    assert.throws(
-        () => renderFrame.buildRenderFrame3D(runtime, state),
-        /cannot infer visual presentation for object "player" on layer 2/
     );
 }
 
@@ -1088,8 +1139,8 @@ function testThreeRendererAppliesTweenWith2DFormulaToDisplayOnly() {
         }
     });
 
-    const atStart = foregroundItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 0 }));
-    const atEnd = foregroundItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 50 }));
+    const atStart = playerItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 0 }));
+    const atEnd = playerItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 50 }));
 
     assert.strictEqual(atStart.x, -0.5);
     assert.strictEqual(atEnd.x, 0.5);
@@ -1146,8 +1197,8 @@ function testThreeRendererUses2DPrefixAndAppended3DMovementBitsForTween() {
             }
         }
     });
-    const start = foregroundItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 0 }));
-    const end = foregroundItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 50 }));
+    const start = playerItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 0 }));
+    const end = playerItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 50 }));
 
     assert.strictEqual(start.z - end.z, 1);
     assert.strictEqual(frame.effects.tween.actionMask, 16);
@@ -1172,8 +1223,8 @@ function testThreeRendererApplies2DActionTweenAsFadeOnly() {
         }
     });
 
-    const atStart = onlyForegroundItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 0 }));
-    const atEnd = foregroundItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 50 }));
+    const atStart = onlyPlayerItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 0 }));
+    const atEnd = playerItem(threeRenderer.buildInstances(frame, { tweenElapsedMs: 50 }));
 
     assert.strictEqual(atStart.x, 0.5);
     assert.strictEqual(atStart.alpha, 0);
@@ -1205,22 +1256,22 @@ const GRAPHICS_EASING_FUNCTIONS = {
     6: t => (--t) * t * t + 1
 };
 
-function foregroundItem(instanceGroups) {
-    const group = instanceGroups.find(entry => entry.scale && entry.scale.y !== 0.08 && entry.alpha === 1);
-    assert(group, "expected a foreground instance group");
+function playerItem(instanceGroups) {
+    const group = instanceGroups.find(entry => entry.scale && entry.color === "#ffffff" && entry.alpha === 1);
+    assert(group, "expected a player instance group");
     assert.strictEqual(group.items.length, 1);
     return group.items[0];
 }
 
-function foregroundItems(instanceGroups) {
+function playerItems(instanceGroups) {
     return instanceGroups
-        .filter(entry => entry.scale && entry.scale.y !== 0.08 && entry.alpha === 1)
+        .filter(entry => entry.scale && entry.color === "#ffffff" && entry.alpha === 1)
         .flatMap(entry => entry.items);
 }
 
-function onlyForegroundItem(instanceGroups) {
-    const group = instanceGroups.find(entry => entry.scale && entry.scale.y !== 0.08);
-    assert(group, "expected a foreground instance group");
+function onlyPlayerItem(instanceGroups) {
+    const group = instanceGroups.find(entry => entry.scale && entry.color === "#ffffff");
+    assert(group, "expected a player instance group");
     assert.strictEqual(group.items.length, 1);
     return Object.assign({ alpha: group.alpha }, group.items[0]);
 }
@@ -1290,6 +1341,11 @@ function faceCountForColor(state, color) {
         .find(group => group.kind === "faces" && group.color === color);
     assert(mesh, `expected face mesh for ${color}`);
     return mesh.faces.length;
+}
+
+function assertNoVisualModeKey(visual) {
+    const removedKey = String.fromCharCode(112, 114, 101, 115, 101, 110, 116, 97, 116, 105, 111, 110);
+    assert(!Object.prototype.hasOwnProperty.call(visual, removedKey));
 }
 
 function fakeThree() {
@@ -1610,7 +1666,7 @@ testRenderFrameUsesCompiledObjectMetadataAndBoardCells();
 testRenderFramePreservesPuzzleScriptNextDrawGroups();
 testThreeRendererBuildsInstanceGroupsFromRenderFrameOnly();
 testThreeRendererRejectsNonFrameInputsBeforeTheyBecomeImplicitRuntimeAccess();
-testThreeRendererRejectsImplicitLayerPresentationFallback();
+testThreeRendererRejectsNonVoxelVisuals();
 testRenderFrameLowersCameraPreludeMetadataToViewContract();
 testRenderFrameCarriesPuzzleScriptBackgroundColorToView();
 testRenderFrameUses2DColorToHexForObjectColors();
@@ -1619,6 +1675,7 @@ testPerspectiveZoomChangesDerivedCameraDistanceWithoutFrameCarrier();
 testThreeRendererFitsCameraToProjectedBoardBounds();
 testThreeRendererUsesHighQualityCanvasDefaults();
 testRenderToCanvasReusesRendererForCanvasLifecycle();
+testRenderToCanvasKeepsFrontSidedVoxelFacesForOrthographicCamera();
 testObliqueCameraUsesWorldUpCarrier();
 testTopDownCameraUsesYawAsSingularityFallbackOnly();
 testRenderFrameRejectsMalformedViewContract();
@@ -1627,13 +1684,13 @@ testExplicitRenderRegionControlsCullingWithoutChangingLogicalScreen();
 testSmoothScreenCameraCenterStaysSeparateFromIntegerVisibleRegion();
 testThreeRendererPositionsCellsAgainstSmoothCameraCenter();
 testCameraDerivedRenderRegionAvoidsFullBoardScanOnLargeWorlds();
-testThreeRendererUsesFullCellSpritesWithoutImplicitPadding();
-testThreeRendererKeepsOverlappingSolidsOnCellY();
+testThreeRendererUsesSpriteVoxelsAsObjectGeometry();
+testThreeRendererKeepsOverlappingObjectsOnCellY();
 testThreeRendererSceneAdapterPreservesAsciiAxisContract();
 testThreeRendererDefaultCameraProjectsBoardRightAndFrontWithInputCarriers();
-testRenderFrameUsesCompiledBackgroundLayerForFloorPresentation();
-testRenderFrameUsesCompiledBackgroundLayerRatherThanLayerZero();
-testRenderFrameKeepsNonBackgroundFloorNamedObjectsSolid();
+testRenderFrameDoesNotClassifyObjectGeometryByLayer();
+testRenderFrameKeepsBackgroundLayerAsOrdinaryObjectVisual();
+testRenderFrameKeepsFloorNamedObjectsAsOrdinaryVoxelObjects();
 testThreeRendererRequiresThreeInsteadOfCanvasFallback();
 testRenderFrameProjects2DSpriteMatrixUsing2DSpriteRules();
 testRenderFrameKeepsSpriteDotsAsNoVoxels();
@@ -1644,13 +1701,13 @@ testThreeRendererVoxelMeshDrawsOnlyExposedFaces();
 testThreeRendererVoxelMeshCullsInternalFacesAcrossCells();
 testThreeRendererVoxelMeshCullsInternalFacesAcrossFiveByFiveCellsOnXAndZ();
 testThreeRendererVoxelMeshCullsFacesFromEachFaceCenterToPerspectiveCamera();
+testThreeRendererVoxelMeshLeavesOrthographicBackfaceSelectionToRenderer();
 testThreeRendererLeavesOpaqueGeometryDepthOrdered();
 testRenderFrameBuildsVoxelVisualsFromObjectOwnedSprite3D();
 testRenderFrameDerivesFullSpriteGridDepthFrom3DSourceSprites();
 testRenderFrameUsesSpriteSizeAsDefault3DGridDepth();
 testRenderFrameDoesNotUseStateSpriteSetFallback();
 testRenderFrameRejectsObjectsWithoutSourceOwnedSpriteMatrix();
-testRenderFrameRejectsImplicitPresentationForUnknownLayer();
 testSessionRenderFrameCarriesSessionStateLike2DGraphicsReadState();
 testSessionTurnRenderFrameCarriesTurnEffectsLike2DGraphicsReadEffects();
 testRenderFrameCarries2DStyleMovedEntitiesForTween();

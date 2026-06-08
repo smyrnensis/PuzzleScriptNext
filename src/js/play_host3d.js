@@ -180,6 +180,7 @@
         const state = compiledState || root.puzzle3DCompiledState || root.state;
         root.textMode = false;
         root.titleScreen = false;
+        root.messagetext = "";
         root.levelEditorOpened = false;
         root.oldflickscreendat = [];
         root.puzzle3DScreenCamera = null;
@@ -638,7 +639,26 @@
     }
 
     function clearBrowserAgain() {
-        root.againing = false;
+        syncBrowserLoopBinding("againing", false);
+    }
+
+    function syncBrowserLoopBinding(name, value) {
+        root[name] = value;
+        if (!root || typeof root.eval !== "function")
+            return;
+        const holder = "__puzzle3DBrowserLoopBindingValue";
+        try {
+            root[holder] = value;
+            root.eval(name + " = globalThis." + holder + ";");
+        } catch (err) {
+            // Some host tests and shells do not expose every browser binding.
+        } finally {
+            try {
+                delete root[holder];
+            } catch (err) {
+                root[holder] = undefined;
+            }
+        }
     }
 
     function syncBrowserLoopBindings() {
@@ -665,11 +685,9 @@
         ];
         for (let i = 0; i < bindings.length; i++) {
             const name = bindings[i];
-            try {
-                root.eval(name + " = globalThis." + name + ";");
-            } catch (err) {
-                // Some host tests and shells do not expose every browser binding.
-            }
+            if (!Object.prototype.hasOwnProperty.call(root, name))
+                continue;
+            syncBrowserLoopBinding(name, root[name]);
         }
     }
 
@@ -838,6 +856,7 @@
             return false;
         if (command !== "undo" && command !== "restart")
             return false;
+        clearBrowserAgain();
 
         const artifacts = {
             queue: [command],

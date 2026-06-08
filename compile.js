@@ -186,7 +186,84 @@ ncp("./src", "./bin/", function (err) {
 
             console.log("running js minification");
 
-            var files = [
+            async function writeMinifiedBundle(files, filename, mapFilename) {
+                var corpus = {};
+                for (var i = 0; i < files.length; i++) {
+                    var fpath = files[i];
+                    corpus["source/" + fpath.slice(9)] = fs.readFileSync(fpath, encoding = 'utf-8');
+                }
+                var result = await minify(
+                    corpus,
+                    {
+                        sourceMap: {
+                            filename,
+                            url: mapFilename
+                        }
+                    });
+                fs.writeFileSync('./bin/js/' + filename, result.code);
+                fs.writeFileSync('./bin/js/' + mapFilename, result.map);
+            }
+
+            const editor2DFiles = [
+                "./src/js/Blob.js",
+                "./src/js/FileSaver.js",
+                "./src/js/jsgif/LZWEncoder.js",
+                "./src/js/jsgif/NeuQuant.js",
+                "./src/js/jsgif/GIFEncoder.js",
+                "./src/js/storagewrapper.js",
+                "./src/js/debug.js",
+                "./src/js/globalVariables.js",
+                "./src/js/font.js",
+                "./src/js/rng.js",
+                "./src/js/riffwave.js",
+                "./src/js/sfxr.js",
+                "./src/js/codemirror/codemirror.js",
+                "./src/js/codemirror/active-line.js",
+                "./src/js/codemirror/dialog.js",
+                "./src/js/codemirror/search.js",
+                "./src/js/codemirror/searchcursor.js",
+                "./src/js/codemirror/match-highlighter.js",
+                "./src/js/codemirror/show-hint.js",
+                "./src/js/codemirror/anyword-hint.js",
+                "./src/js/codemirror/comment.js",
+                "./src/js/colors.js",
+                "./src/js/graphics.js",
+                "./src/js/mobile.js",
+                "./src/js/inputoutput.js",
+                "./src/js/buildStandalone.js",
+                "./src/js/engine.js",
+                "./src/js/parser.js",
+                "./src/js/editor.js",
+                "./src/js/compiler.js",
+                "./src/js/editor_3d_router.js",
+                "./src/js/console.js",
+                "./src/js/soundbar.js",
+                "./src/js/toolbar.js",
+                "./src/js/layout.js",
+                "./src/js/addlisteners.js",
+                "./src/js/addlisteners_editor.js",
+                "./src/js/solver.js",
+                "./src/js/FastPriorityQueue.js",
+                "./src/js/makegif.js"];
+
+            const play2DFiles = [
+                "./src/js/storagewrapper.js",
+                "./src/js/globalVariables.js",
+                "./src/js/debug_off.js",
+                "./src/js/font.js",
+                "./src/js/rng.js",
+                "./src/js/riffwave.js",
+                "./src/js/sfxr.js",
+                "./src/js/codemirror/stringstream.js",
+                "./src/js/colors.js",
+                "./src/js/graphics.js",
+                "./src/js/engine.js",
+                "./src/js/parser.js",
+                "./src/js/compiler.js",
+                "./src/js/inputoutput.js",
+                "./src/js/mobile.js"];
+
+            const editor3DFiles = [
                 "./src/js/Blob.js",
                 "./src/js/FileSaver.js",
                 "./src/js/jsgif/LZWEncoder.js",
@@ -211,9 +288,10 @@ ncp("./src", "./bin/", function (err) {
                 "./src/js/colors.js",
                 "./src/js/sprite_projection3d.js",
                 "./src/js/graphics3d.js",
+                "./src/js/mobile.js",
                 "./src/js/inputoutput3d.js",
                 "./src/js/level_editor3d.js",
-                "./src/js/mobile.js",
+                "./src/js/console.js",
                 "./src/js/buildStandalone.js",
                 "./src/js/command_queue.js",
                 "./src/js/random_rule_groups.js",
@@ -251,33 +329,16 @@ ncp("./src", "./bin/", function (err) {
                 "./src/js/compiler_3d.js",
                 "./src/js/compiler3d.js",
                 "./src/js/editor.js",
-                "./src/js/console.js",
                 "./src/js/soundbar.js",
                 "./src/js/toolbar3d.js",
                 "./src/js/layout.js",
                 "./src/js/addlisteners.js",
                 "./src/js/addlisteners_editor.js",
+                "./src/js/makegif.js",
                 "./src/js/solver.js",
-                "./src/js/FastPriorityQueue.js",
-                "./src/js/makegif.js"];
+                "./src/js/FastPriorityQueue.js"];
 
-            var corpus = {};
-            for (var i = 0; i < files.length; i++) {
-                var fpath = files[i];
-                corpus["source/" + fpath.slice(9)] = fs.readFileSync(fpath, encoding = 'utf-8');
-            }
-            var result = await minify(
-                corpus,
-                {
-                    sourceMap: {
-                        filename: "scripts_compiled.js",
-                        url: "scripts_compiled.js.map"
-                    }
-                });
-            fs.writeFileSync('./bin/js/scripts_compiled.js', result.code);
-            fs.writeFileSync('./bin/js/scripts_compiled.js.map', result.map);
-
-            files = [
+            const play3DFiles = [
                 "./src/js/storagewrapper.js",
                 "./src/js/globalVariables.js",
                 "./src/js/debug_off.js",
@@ -328,22 +389,10 @@ ncp("./src", "./bin/", function (err) {
                 "./src/js/level_editor3d.js",
                 "./src/js/mobile.js"];
 
-            corpus = {};
-            for (var i = 0; i < files.length; i++) {
-                var fpath = files[i];
-                corpus["source/" + fpath.slice(9)] = fs.readFileSync(fpath, encoding = 'utf-8');
-            }
-
-            var result = await minify(
-                corpus,
-                {
-                    sourceMap: {
-                        filename: "scripts_play_compiled.js",
-                        url: "scripts_play_compiled.js.map"
-                    }
-                });
-            fs.writeFileSync('./bin/js/scripts_play_compiled.js', result.code);
-            fs.writeFileSync('./bin/js/scripts_play_compiled.js.map', result.map);
+            await writeMinifiedBundle(editor2DFiles, "scripts_compiled.js", "scripts_compiled.js.map");
+            await writeMinifiedBundle(play2DFiles, "scripts_play_compiled.js", "scripts_play_compiled.js.map");
+            await writeMinifiedBundle(editor3DFiles, "scripts3d_compiled.js", "scripts3d_compiled.js.map");
+            await writeMinifiedBundle(play3DFiles, "scripts3d_play_compiled.js", "scripts3d_play_compiled.js.map");
 
             await ncp("./src/js", "./bin/js/source", function (err) {
                 if (err) {
@@ -363,15 +412,28 @@ ncp("./src", "./bin/", function (err) {
             editor = editor.replace(/<!--BUILDNUMBER-->/g, `build ${buildnum.toString()}, ${d.getDate()}-${monthname[d.getMonth()]}-${d.getFullYear()}`);
             fs.writeFileSync("./bin/editor.html", editor, encoding = 'utf8');
 
+            var editor3d = fs.readFileSync("./bin/editor3d.html", encoding = 'utf8');
+            editor3d = editor3d.replace(/<script src="js\/[A-Za-z0-9_\/-]*\.js"><\/script>/g, "");
+            editor3d = editor3d.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts3d_compiled.js"><\/script>');
+            editor3d = editor3d.replace(/<link rel="stylesheet" href="[A-Za-z0-9_\/-]*\.css">/g, '');
+            editor3d = editor3d.replace(/<!--CSSREPLACE-->/g, '<link rel="stylesheet" href="css\/combined.css">');
+            editor3d = editor3d.replace(/<!--BUILDNUMBER-->/g, `build ${buildnum.toString()}, ${d.getDate()}-${monthname[d.getMonth()]}-${d.getFullYear()}`);
+            fs.writeFileSync("./bin/editor3d.html", editor3d, encoding = 'utf8');
+
             var player = fs.readFileSync("./bin/play.html", encoding = 'utf8');
             player = player.replace(/<script src="js\/[A-Za-z0-9_\/-]*\.js"><\/script>/g, "");
             player = player.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts_play_compiled.js"><\/script>');
             fs.writeFileSync("./bin/play.html", player, encoding = 'utf8');
 
+            var player3d = fs.readFileSync("./bin/play3d.html", encoding = 'utf8');
+            player3d = player3d.replace(/<script src="js\/[A-Za-z0-9_\/-]*\.js"><\/script>/g, "");
+            player3d = player3d.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts3d_play_compiled.js"><\/script>');
+            fs.writeFileSync("./bin/play3d.html", player3d, encoding = 'utf8');
+
             console.log("inlining standalone template")
 
-            //src one first:
-            var standalone_raw = inlineStandaloneThreeModule(fs.readFileSync("./src/standalone.html", 'utf8'));
+            // src one first: standalone exports use the 3D host template.
+            var standalone_raw = inlineStandaloneThreeModule(fs.readFileSync("./src/standalone3d.html", 'utf8'));
 
             webResourceInliner.html({
                 fileContent: standalone_raw,
@@ -388,7 +450,7 @@ ncp("./src", "./bin/", function (err) {
             //then bin one:
             standalone_raw = removeStandaloneRawScriptsForCompiledBundle(standalone_raw);
             standalone_raw = standalone_raw.replace(STANDALONE_PLAY_CSS_RE, "");
-            standalone_raw = standalone_raw.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts_play_compiled.js"><\/script>');
+            standalone_raw = standalone_raw.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts3d_play_compiled.js"><\/script>');
             webResourceInliner.html({
                 fileContent: standalone_raw,
                 relativeTo: 'bin/',

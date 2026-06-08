@@ -1380,7 +1380,8 @@ function testMicroban3DFixtureCompilesWith3DSpritesAndLevels() {
 
 function test3DDemoFixturesUseExplicitFloorLayer() {
     const fixturePaths = [
-        "../src/demo/3d microban.txt"
+        "../src/demo/3d microban.txt",
+        "../src/demo/ladder.txt"
     ];
 
     for (const fixturePath of fixturePaths) {
@@ -1397,6 +1398,77 @@ function test3DDemoFixturesUseExplicitFloorLayer() {
             `${fixturePath} should not use Background as the visible floor layer`
         );
     }
+}
+
+function testLadderFixtureCompilesVerticalAgainPuzzle() {
+    const { compiler, errors } = loadCompilerForE2ETest();
+    const source = fs.readFileSync(path.join(__dirname, "../src/demo/ladder.txt"), "utf8");
+    const state = compiler.loadFile(source);
+
+    assert.deepStrictEqual(errors, []);
+    assert(state, "compiler returned no state");
+    assert.strictEqual(state.metadata.three_dimensions, true);
+    assert.strictEqual(state.metadata.title, "ladder");
+    assert.strictEqual(state.metadata.again_interval, 0.05);
+    assert.strictEqual(state.metadata.tween_length, 0.05);
+    assert.strictEqual(state.metadata.camera_zoom, undefined);
+    assert.deepStrictEqual(state.metadata.camera_angle, { yaw: 10, pitch: 60 });
+    assert.strictEqual(state.levels.length, 2);
+    assert.strictEqual(state.levels[0].message, "climb the ladder by x");
+    assert.strictEqual(state.levels[1].is3d, true);
+    assert.strictEqual(state.levels[1].height, 6);
+    assert.notStrictEqual(state.objects.ladder.layer, state.objects.floor.layer);
+    assert.strictEqual(sprite3Depth(state.objects.ladder.sprite3matrix), state.sprite_size);
+    assert.strictEqual(sprite3VisibleCellCount(state.objects.goal.sprite3matrix), 0);
+
+    assert(source.includes("up [ action Player Ladder | no Wall ]"), "ladder should author climb as an up-oriented rule");
+    assert(source.includes("late down once [ Player no Ladder | no Floor no Wall ]"), "ladder should author gravity as a once down-oriented late rule");
+    assert(state.rules3d.groups.length > 0, "ladder should compile normal rule groups");
+    assert(state.rules3d.lateGroups.length > 0, "ladder should compile late rule groups");
+    assert(
+        state.rules3d.lateGroups.some(group => group.some(rule => rule.direction === "down" && rule.isOnce && rule.commands.some(command => command[0] === "again"))),
+        "ladder should preserve down/once/again on the lowered gravity rule"
+    );
+}
+
+function testLadderGravityUsesDeferredAgainBoundary() {
+    const { compiler, errors } = loadCompilerForE2ETest();
+    const source = fs.readFileSync(path.join(__dirname, "../src/demo/ladder.txt"), "utf8");
+    const state = compiler.loadFile(source);
+    const session = gameRuntime.createSessionFromState3D(state, { levelIndex: 1 });
+    const playerId = state.objects.player.id;
+
+    assert.deepStrictEqual(errors, []);
+
+    for (const input of ["right", "back", "action", "action", "action", "action"]) {
+        gameRuntime.processSessionTurn3D(session, input, {
+            deferAgain: true,
+            deferWin: true,
+            deferQuit: true
+        });
+    }
+
+    assert.deepStrictEqual(playerCoords3D(session.runtime.board, playerId), [{ x: 2, y: 0, z: 2 }]);
+    const result = gameRuntime.processSessionTurn3D(session, "left", {
+        deferAgain: true,
+        deferWin: true,
+        deferQuit: true
+    });
+
+    assert.deepStrictEqual(playerCoords3D(session.runtime.board, playerId), [{ x: 1, y: 1, z: 2 }]);
+    assert.strictEqual(result.againScheduled, true);
+    assert.strictEqual(result.turns.length, 1);
+    assert(result.tailPlan && result.tailPlan.againRequested, "falling one cell should request again for the next browser-loop turn");
+}
+
+function playerCoords3D(board, objectId) {
+    const coords = [];
+    for (let index = 0; index < board.cellCount; index++) {
+        const cell = board.getCell(index);
+        if (maskHasObject(cell, objectId))
+            coords.push(ThreeDimensionLevels.indexToCoord3(index, board));
+    }
+    return coords;
 }
 
 function loadCompilerForE2ETest() {
@@ -1713,5 +1785,7 @@ testPuzzleScriptTextCompilesAndReturnsCantMoveSfxArtifacts3D();
 testPuzzleScriptTextCompilesRelativePushCarrierForFront3D();
 testMicroban3DFixtureCompilesWith3DSpritesAndLevels();
 test3DDemoFixturesUseExplicitFloorLayer();
+testLadderFixtureCompilesVerticalAgainPuzzle();
+testLadderGravityUsesDeferredAgainBoundary();
 
 console.log("3d e2e tests passed");

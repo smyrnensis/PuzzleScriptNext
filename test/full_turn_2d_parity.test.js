@@ -128,7 +128,9 @@ module.exports.__fullTurnOracle = {
         state = makeState(options);
         curLevelNo = 0;
         curlevelTarget = null;
-        curLevel = new Level(0, options.width || options.objects.length, 1, 2, new Int32Array(options.objects), null);
+        var levelHeight = options.height || 1;
+        var levelWidth = options.width || Math.floor(options.objects.length / levelHeight);
+        curLevel = new Level(0, levelWidth, levelHeight, 2, new Int32Array(options.objects), null);
         RebuildLevelArrays();
         resetTurnGlobals();
         restartTarget = backupLevel();
@@ -154,7 +156,9 @@ module.exports.__fullTurnOracle = {
         state = makeState(options);
         curLevelNo = 0;
         curlevelTarget = null;
-        curLevel = new Level(0, options.width || options.objects.length, 1, 2, new Int32Array(options.objects), null);
+        var levelHeight = options.height || 1;
+        var levelWidth = options.width || Math.floor(options.objects.length / levelHeight);
+        curLevel = new Level(0, levelWidth, levelHeight, 2, new Int32Array(options.objects), null);
         RebuildLevelArrays();
         resetTurnGlobals();
         restartTarget = backupLevel();
@@ -325,7 +329,10 @@ function snapshot(result) {
 function run3DFullTurn(options) {
     const state = make3DState(options);
     const session = gameRuntime3d.createSessionFromState3D(state);
-    const result = gameRuntime3d.processSessionTurn3D(session, options.input || null);
+    const processOptions = Object.assign({}, options.processOptions || {});
+    if (options.deferAgain)
+        processOptions.deferAgain = true;
+    const result = gameRuntime3d.processSessionTurn3D(session, options.input || null, processOptions);
     return snapshot3DSession(session, result);
 }
 
@@ -336,6 +343,9 @@ function run3DLevelStart(options) {
 }
 
 function make3DState(options) {
+    const height = options.height || 1;
+    const depth = options.depth || 1;
+    const width = options.width || Math.floor(options.objects.length / (height * depth));
     return {
         metadata: options.metadata || {},
         default_metadata: {},
@@ -366,9 +376,9 @@ function make3DState(options) {
         },
         levels: [{
             is3d: true,
-            width: options.width || options.objects.length,
-            height: 1,
-            depth: 1,
+            width,
+            height,
+            depth,
             cellCount: options.objects.length,
             n_tiles: options.objects.length,
             layerCount: 2,
@@ -378,12 +388,15 @@ function make3DState(options) {
 }
 
 function snapshot3DSession(session, result) {
+    const hasDeferredAgain = !!(result && Object.prototype.hasOwnProperty.call(result, "againScheduled"));
     return {
         result: !!(result.turn.changed || session.won),
         objects: Array.from(session.runtime.board.cells),
         movements: Array.from(session.runtime.board.movements),
         winning: session.won,
-        againing: !!(result.turn.sessionArtifacts && result.turn.sessionArtifacts.againRequested && result.turn.boardChanged),
+        againing: hasDeferredAgain
+            ? !!result.againScheduled
+            : !!(result.turn.sessionArtifacts && result.turn.sessionArtifacts.againRequested && result.turn.boardChanged),
         backupCount: session.backups.length,
         hasCheckpoint: !!session.checkpointSource
     };
@@ -393,7 +406,7 @@ function make3DRule(spec) {
     const patterns = spec.patterns.map(row => {
         const cells = row.cells.map(cell => {
             return {
-                offset: { x: 0, y: 0, z: 0 },
+                offset: cell.offset || { x: 0, y: 0, z: 0 },
                 pattern: rules3d.makeCellPattern({
                     objectsPresent: new Int32Array(cell.objectsPresent || [0]),
                     objectsMissing: new Int32Array(cell.objectsMissing || [0]),
@@ -507,6 +520,31 @@ function commandRule(commands) {
     };
 }
 
+const lateDownOnceAgainRule = {
+    lineNumber: 40,
+    direction: "down",
+    isOnce: true,
+    commands: [["again"]],
+    patterns: [{
+        objectMask: [2],
+        movementMask: [0],
+        cells: [{
+            objectsPresent: [2],
+            offset: { x: 0, y: 0, z: 0 },
+            replacement: {
+                objectsClear: [6]
+            }
+        }, {
+            objectsMissing: [6],
+            offset: { x: 0, y: 1, z: 0 },
+            replacement: {
+                objectsClear: [6],
+                objectsSet: [2]
+            }
+        }]
+    }]
+};
+
 function testInputMovementFullTurnMatches2D(oracle) {
     runParityScenario(oracle, {
         name: "input movement full turn matches 2D",
@@ -605,6 +643,24 @@ function testRunRulesOnLevelStartCommandTailMatches2D(oracle) {
     }
 }
 
+function testLateDownOnceAgainBrowserTurnMatches2D(oracle) {
+    const scenario = {
+        name: "late down once direct replacement schedules again like 2D browser turn",
+        input: null,
+        width: 1,
+        height: 4,
+        objects: [3, 1, 1, 5],
+        rules: [],
+        lateRules: [[lateDownOnceAgainRule]],
+        deferAgain: true
+    };
+    const expected = JSON.parse(JSON.stringify(oracle.run(scenario)));
+    assert.deepStrictEqual(expected.objects, [1, 3, 1, 5], "2D oracle should fall one cell only");
+    assert.strictEqual(expected.againing, true, "2D oracle should schedule a browser again turn");
+    const actual = run3DFullTurn(scenario);
+    assert.deepStrictEqual(actual, expected, scenario.name);
+}
+
 const oracle = load2DFullTurnOracle();
 testInputMovementFullTurnMatches2D(oracle);
 testRuleMovementFullTurnMatches2D(oracle);
@@ -613,5 +669,6 @@ testWinConditionsFullTurnMatches2D(oracle);
 testRequirePlayerMovementMatches2D(oracle);
 testRunRulesOnLevelStartMatches2D(oracle);
 testRunRulesOnLevelStartCommandTailMatches2D(oracle);
+testLateDownOnceAgainBrowserTurnMatches2D(oracle);
 
 console.log("full turn 2d parity tests passed");

@@ -1530,6 +1530,7 @@ function update() {
     if (againing) {
         if (timer>againinterval && messagetext == "") {
         //if (timer>againinterval && messagetext == "" && !isTweening) {
+            againing = false;
             if (processBrowserPlayInput(-1)) {
                 draw = true;
                 keyRepeatTimer=0;

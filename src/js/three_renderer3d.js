@@ -38,7 +38,9 @@
                 addCameraLight(THREE, scene, camera, frame);
             const instances = buildInstances(frame, Object.assign({}, this.options, {
                 voxelMesh: true,
-                cameraPosition: vectorFromThree(camera.position)
+                cameraProjection: frame.view && frame.view.projection || "perspective",
+                cameraPosition: vectorFromThree(camera.position),
+                cameraDirection: cameraDirection(frame.view)
             }));
             for (const group of instances) {
                 const material = makeMaterial(THREE, group, shade);
@@ -195,14 +197,16 @@
 
     function buildInstances(frame, options) {
         frame = validateRenderFrame3D(frame);
+        const opts = options || {};
         const objects = frame.objects;
         const groups = new Map();
         const objectGroups = frame.drawPlan.objectGroups;
         const cellOrder = frame.drawPlan.cellOrder;
-        const tween = buildTweenState(frame, options || {});
-        const solidVoxelOccupancy = options && options.voxelMesh
+        const tween = buildTweenState(frame, opts);
+        const solidVoxelOccupancy = opts.voxelMesh
             ? buildSolidVoxelOccupancy(frame, objectGroups, cellOrder, objects, tween)
             : null;
+        const cameraFacing = cameraFacingFromOptions(opts);
 
         for (const objectGroup of objectGroups) {
             for (const cellIndex of cellOrder) {
@@ -217,7 +221,7 @@
                     const object = objects[objectId];
                     if (!object)
                         continue;
-                    const items = instancesForObject(frame, cell, object, tween, options || {}, solidVoxelOccupancy);
+                    const items = instancesForObject(frame, cell, object, tween, opts, solidVoxelOccupancy, cameraFacing);
                     for (const item of items) {
                         if (!isVisibleInstance(item))
                             continue;
@@ -260,52 +264,17 @@
             && (item.faces || item.scale);
     }
 
-    function instancesForObject(frame, cell, object, tween, options, solidVoxelOccupancy) {
-        const presentation = objectPresentation(object);
-        if (object.visual && object.visual.voxels && presentation === "floor")
-            return floorSpriteInstancesForObject(frame, cell, object, tween);
+    function instancesForObject(frame, cell, object, tween, options, solidVoxelOccupancy, cameraFacing) {
         if (object.visual && object.visual.voxels && options && options.voxelMesh)
-            return voxelFaceInstancesForObject(frame, cell, object, tween, solidVoxelOccupancy, options);
+            return voxelFaceInstancesForObject(frame, cell, object, tween, solidVoxelOccupancy, cameraFacing);
         if (object.visual && object.visual.voxels)
             return voxelInstancesForObject(frame, cell, object, tween);
-        return [instanceForObject(frame, cell, object, tween)];
-    }
-
-    function instanceForObject(frame, cell, object, tween) {
-        const presentation = objectPresentation(object);
-        const isSurface = presentation === "floor";
-        const transform = tweenTransformForObject(cell, object, tween);
-        const position = boardCellToScenePosition(frame, cell, transform.offset);
-        const y = position.y + (isSurface ? -0.46 : 0);
-        return {
-            x: position.x,
-            y,
-            z: position.z,
-            color: object.visual && object.visual.color || "#ff00ff",
-            alpha: visualAlpha(object.visual, transform.alpha),
-            renderOrder: renderOrderForObject(object),
-            scale: surfaceScaleForPresentation(presentation)
-        };
-    }
-
-    function surfaceScaleForPresentation(presentation) {
-        if (presentation === "floor")
-            return { x: 1, y: 0.08, z: 1 };
-        if (presentation === "solid")
-            return { x: 1, y: 1, z: 1 };
-        throw new Error(`3D renderer does not support visual presentation "${presentation}".`);
+        throw new Error(`3D renderer requires voxel visual data for object "${object && object.name || object && object.id}".`);
     }
 
     function visualAlpha(visual, transformAlpha, voxelAlpha) {
         const explicitAlpha = voxelAlpha == null ? visual && visual.alpha : voxelAlpha;
         return Number.isFinite(explicitAlpha) ? explicitAlpha * transformAlpha : transformAlpha;
-    }
-
-    function objectPresentation(object) {
-        const presentation = object && object.visual && object.visual.presentation;
-        if (presentation === "floor" || presentation === "solid")
-            return presentation;
-        throw new Error(`3D renderer requires explicit supported visual presentation for object "${object && object.name || object && object.id}".`);
     }
 
     function voxelInstancesForObject(frame, cell, object, tween) {
@@ -346,13 +315,13 @@
         return items;
     }
 
-    function voxelFaceInstancesForObject(frame, cell, object, tween, solidVoxelOccupancy, options) {
+    function voxelFaceInstancesForObject(frame, cell, object, tween, solidVoxelOccupancy, cameraFacing) {
         const cells = worldVoxelCellsForObject(frame, cell, object, tween);
         const occupied = solidVoxelOccupancy || new Set(cells.map(voxel => voxel.worldKey));
         const items = [];
 
         for (const voxel of cells) {
-            const faces = exposedVoxelFaces(voxel, occupied, options && options.cameraPosition);
+            const faces = exposedVoxelFaces(voxel, occupied, cameraFacing);
             if (faces.length === 0)
                 continue;
             items.push({
@@ -378,8 +347,6 @@
                         continue;
                     const object = objects[objectId];
                     if (!object || !object.visual || !object.visual.voxels)
-                        continue;
-                    if (objectPresentation(object) !== "solid")
                         continue;
                     for (const voxel of worldVoxelCellsForObject(frame, cell, object, tween)) {
                         if (voxel.color === "transparent")
@@ -440,7 +407,7 @@
         return cells;
     }
 
-    function exposedVoxelFaces(voxel, occupied, cameraPosition) {
+    function exposedVoxelFaces(voxel, occupied, cameraFacing) {
         const half = voxel.step / 2;
         const x0 = voxel.center.x - half;
         const x1 = voxel.center.x + half;
@@ -449,7 +416,7 @@
         const z0 = voxel.center.z - half;
         const z1 = voxel.center.z + half;
         const faces = [];
-        addExposedFace(faces, occupied, voxel, 1, 0, 0, { x: 1, y: 0, z: 0 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 1, 0, 0, { x: 1, y: 0, z: 0 }, cameraFacing, [
             { x: x1, y: y0, z: z0 },
             { x: x1, y: y1, z: z0 },
             { x: x1, y: y1, z: z1 },
@@ -457,7 +424,7 @@
             { x: x1, y: y1, z: z1 },
             { x: x1, y: y0, z: z1 }
         ]);
-        addExposedFace(faces, occupied, voxel, -1, 0, 0, { x: -1, y: 0, z: 0 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, -1, 0, 0, { x: -1, y: 0, z: 0 }, cameraFacing, [
             { x: x0, y: y0, z: z1 },
             { x: x0, y: y1, z: z1 },
             { x: x0, y: y1, z: z0 },
@@ -465,7 +432,7 @@
             { x: x0, y: y1, z: z0 },
             { x: x0, y: y0, z: z0 }
         ]);
-        addExposedFace(faces, occupied, voxel, 0, 1, 0, { x: 0, y: 1, z: 0 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 0, 1, 0, { x: 0, y: 1, z: 0 }, cameraFacing, [
             { x: x0, y: y1, z: z0 },
             { x: x0, y: y1, z: z1 },
             { x: x1, y: y1, z: z1 },
@@ -473,7 +440,7 @@
             { x: x1, y: y1, z: z1 },
             { x: x1, y: y1, z: z0 }
         ]);
-        addExposedFace(faces, occupied, voxel, 0, -1, 0, { x: 0, y: -1, z: 0 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 0, -1, 0, { x: 0, y: -1, z: 0 }, cameraFacing, [
             { x: x0, y: y0, z: z1 },
             { x: x0, y: y0, z: z0 },
             { x: x1, y: y0, z: z0 },
@@ -481,7 +448,7 @@
             { x: x1, y: y0, z: z0 },
             { x: x1, y: y0, z: z1 }
         ]);
-        addExposedFace(faces, occupied, voxel, 0, 0, 1, { x: 0, y: 0, z: 1 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 0, 0, 1, { x: 0, y: 0, z: 1 }, cameraFacing, [
             { x: x1, y: y0, z: z1 },
             { x: x1, y: y1, z: z1 },
             { x: x0, y: y1, z: z1 },
@@ -489,7 +456,7 @@
             { x: x0, y: y1, z: z1 },
             { x: x0, y: y0, z: z1 }
         ]);
-        addExposedFace(faces, occupied, voxel, 0, 0, -1, { x: 0, y: 0, z: -1 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 0, 0, -1, { x: 0, y: 0, z: -1 }, cameraFacing, [
             { x: x0, y: y0, z: z0 },
             { x: x0, y: y1, z: z0 },
             { x: x1, y: y1, z: z0 },
@@ -500,7 +467,7 @@
         return faces;
     }
 
-    function addExposedFace(faces, occupied, voxel, dx, dy, dz, normal, cameraPosition, vertices) {
+    function addExposedFace(faces, occupied, voxel, dx, dy, dz, normal, cameraFacing, vertices) {
         const neighborCenter = {
             x: voxel.center.x + dx * voxel.step,
             y: voxel.center.y + dy * voxel.step,
@@ -508,13 +475,28 @@
         };
         if (occupied.has(worldVoxelKey(neighborCenter)))
             return;
-        if (cameraPosition && !faceFacesCamera(normal, vertices, cameraPosition))
+        if (cameraFacing && !faceFacesCamera(normal, vertices, cameraFacing))
             return;
         faces.push({ normal, vertices });
     }
 
-    function faceFacesCamera(normal, vertices, cameraPosition) {
+    function cameraFacingFromOptions(options) {
+        if (!options)
+            return null;
+        const projection = options.cameraProjection || "perspective";
+        if (projection === "orthographic")
+            return null;
+        if (!options.cameraPosition)
+            return null;
+        return {
+            projection,
+            position: vectorFromThree(options.cameraPosition)
+        };
+    }
+
+    function faceFacesCamera(normal, vertices, cameraFacing) {
         const center = faceCenter(vertices);
+        const cameraPosition = cameraFacing.position;
         const toCamera = {
             x: cameraPosition.x - center.x,
             y: cameraPosition.y - center.y,
@@ -546,35 +528,6 @@
 
     function quantizedCoord(value) {
         return Math.round(value * 1000000);
-    }
-
-    function floorSpriteInstancesForObject(frame, cell, object, tween) {
-        const voxels = object.visual.voxels;
-        const size = voxels.size || {};
-        const width = Math.max(1, size.width || size.x || 1);
-        const depth = Math.max(1, size.depth || size.z || 1);
-        const span = object.visual.span || 1;
-        const stepX = span / width;
-        const stepZ = span / depth;
-        const transform = tweenTransformForObject(cell, object, tween);
-        const position = boardCellToScenePosition(frame, cell, transform.offset);
-        const items = [];
-
-        for (const voxel of voxels.cells || []) {
-            const vx = voxel.x == null ? voxel.col : voxel.x;
-            const vz = voxel.z == null ? voxel.row : voxel.z;
-            items.push({
-                x: position.x - span / 2 + (vx + 0.5) * stepX,
-                y: position.y - 0.46,
-                z: position.z - span / 2 + (vz + 0.5) * stepZ,
-                color: voxel.color || object.visual.color || "#ff00ff",
-                alpha: visualAlpha(object.visual, transform.alpha, voxel.alpha),
-                renderOrder: renderOrderForObject(object),
-                scale: { x: stepX, y: 0.08, z: stepZ }
-            });
-        }
-
-        return items;
     }
 
     function mergeVoxelRuns(voxels, options) {

@@ -21781,7 +21781,6 @@ function isRulePrefixDirectionToken(state, token) {
 
     function buildRenderObjects3D(state) {
         const count = state.objectCount || (state.idDict ? state.idDict.length : 0);
-        const presentation = classifyLayerPresentation3D(state);
         const objects = [];
         for (let id = 0; id < count; id++) {
             const name = state.idDict && state.idDict[id];
@@ -21793,50 +21792,27 @@ function isRulePrefixDirectionToken(state, token) {
                 id,
                 name,
                 layer,
-                visual: buildObjectVisual3D(state, object, presentationForLayer(presentation, layer, name), name)
+                visual: buildObjectVisual3D(state, object, name)
             };
         }
         return objects;
     }
 
-    function presentationForLayer(presentation, layer, name) {
-        const value = presentation[layer];
-        if (value === "floor" || value === "solid")
-            return value;
-        throw new Error(`3D render frame cannot infer visual presentation for object "${name}" on layer ${layer}.`);
-    }
-
-    function classifyLayerPresentation3D(state) {
-        const layers = state && state.collisionLayers || [];
-        const backgroundLayer = Number.isInteger(state && state.backgroundlayer)
-            ? state.backgroundlayer
-            : 0;
-        const result = [];
-        for (let layer = 0; layer < layers.length; layer++) {
-            if (layer === backgroundLayer)
-                result[layer] = "floor";
-            else
-                result[layer] = "solid";
-        }
-        return result;
-    }
-
-    function buildObjectVisual3D(state, object, presentation, name) {
+    function buildObjectVisual3D(state, object, name) {
         const colors = normalizeColors(state, object.colors || []);
         if (object.sprite3matrix)
-            return buildSprite3MatrixVisual3D(state, object, colors, presentation);
+            return buildSprite3MatrixVisual3D(state, object, colors);
         if (object.spritematrix && object.spritematrix.length > 0)
-            return buildSpriteMatrixVisual3D(state, object, colors, presentation);
+            return buildSpriteMatrixVisual3D(state, object, colors);
 
         throw new Error(`3D render frame requires object-owned sprite matrix data for "${name || "unnamed object"}".`);
     }
 
-    function buildSpriteMatrixVisual3D(state, object, colors, presentation) {
+    function buildSpriteMatrixVisual3D(state, object, colors) {
         const matrix = object.spritematrix || [];
         const cells = spriteMatrixCells(matrix, colors);
         return {
             kind: "spritematrix",
-            presentation,
             color: cells.length > 0 ? cells[0].color : firstVisibleColor(colors),
             colors,
             matrix,
@@ -21848,12 +21824,11 @@ function isRulePrefixDirectionToken(state, token) {
         };
     }
 
-    function buildSprite3MatrixVisual3D(state, object, colors, presentation) {
+    function buildSprite3MatrixVisual3D(state, object, colors) {
         const matrix = object.sprite3matrix || [];
         const cells = sprite3MatrixCells(matrix, colors);
         return {
             kind: "sprite3matrix",
-            presentation,
             color: cells.length > 0 ? cells[0].color : firstVisibleColor(colors),
             colors,
             matrix,
@@ -21873,7 +21848,7 @@ function isRulePrefixDirectionToken(state, token) {
                 const value = cols[col];
                 if (value < 0 || value === "." || value === " ")
                     continue;
-                const color = presentationColorFromSpriteValue(value, colors);
+                const color = spriteColorFromValue(value, colors);
                 if (color.visible)
                     cells.push(spriteCell({ col, row, slice: 0 }, color));
             }
@@ -21891,7 +21866,7 @@ function isRulePrefixDirectionToken(state, token) {
                     const value = slices[slice];
                     if (value < 0 || value === "." || value === " ")
                         continue;
-                    const color = presentationColorFromSpriteValue(value, colors);
+                    const color = spriteColorFromValue(value, colors);
                     if (color.visible)
                         cells.push(spriteCell({ col, row, slice }, color));
                 }
@@ -21907,8 +21882,8 @@ function isRulePrefixDirectionToken(state, token) {
         return cell;
     }
 
-    function presentationColorFromSpriteValue(value, colors) {
-        return normalizePresentationColor(colorFromSpriteValue(value, colors));
+    function spriteColorFromValue(value, colors) {
+        return normalizeSpriteColor(colorFromSpriteValue(value, colors));
     }
 
     function colorFromSpriteValue(value, colors) {
@@ -21919,7 +21894,7 @@ function isRulePrefixDirectionToken(state, token) {
         return value || "#ff00ff";
     }
 
-    function normalizePresentationColor(color) {
+    function normalizeSpriteColor(color) {
         if (!color)
             return { color: "#ff00ff", alpha: 1, visible: true };
         if (typeof color === "string" && color.toLowerCase() === "transparent")
@@ -22011,9 +21986,9 @@ function isRulePrefixDirectionToken(state, token) {
 
     function firstVisibleColor(colors) {
         for (const color of colors || []) {
-            const presentation = normalizePresentationColor(color);
-            if (presentation.visible)
-                return presentation.color;
+            const spriteColor = normalizeSpriteColor(color);
+            if (spriteColor.visible)
+                return spriteColor.color;
         }
         return "transparent";
     }
@@ -22628,7 +22603,9 @@ function isRulePrefixDirectionToken(state, token) {
                 addCameraLight(THREE, scene, camera, frame);
             const instances = buildInstances(frame, Object.assign({}, this.options, {
                 voxelMesh: true,
-                cameraPosition: vectorFromThree(camera.position)
+                cameraProjection: frame.view && frame.view.projection || "perspective",
+                cameraPosition: vectorFromThree(camera.position),
+                cameraDirection: cameraDirection(frame.view)
             }));
             for (const group of instances) {
                 const material = makeMaterial(THREE, group, shade);
@@ -22785,14 +22762,16 @@ function isRulePrefixDirectionToken(state, token) {
 
     function buildInstances(frame, options) {
         frame = validateRenderFrame3D(frame);
+        const opts = options || {};
         const objects = frame.objects;
         const groups = new Map();
         const objectGroups = frame.drawPlan.objectGroups;
         const cellOrder = frame.drawPlan.cellOrder;
-        const tween = buildTweenState(frame, options || {});
-        const solidVoxelOccupancy = options && options.voxelMesh
+        const tween = buildTweenState(frame, opts);
+        const solidVoxelOccupancy = opts.voxelMesh
             ? buildSolidVoxelOccupancy(frame, objectGroups, cellOrder, objects, tween)
             : null;
+        const cameraFacing = cameraFacingFromOptions(opts);
 
         for (const objectGroup of objectGroups) {
             for (const cellIndex of cellOrder) {
@@ -22807,7 +22786,7 @@ function isRulePrefixDirectionToken(state, token) {
                     const object = objects[objectId];
                     if (!object)
                         continue;
-                    const items = instancesForObject(frame, cell, object, tween, options || {}, solidVoxelOccupancy);
+                    const items = instancesForObject(frame, cell, object, tween, opts, solidVoxelOccupancy, cameraFacing);
                     for (const item of items) {
                         if (!isVisibleInstance(item))
                             continue;
@@ -22850,52 +22829,17 @@ function isRulePrefixDirectionToken(state, token) {
             && (item.faces || item.scale);
     }
 
-    function instancesForObject(frame, cell, object, tween, options, solidVoxelOccupancy) {
-        const presentation = objectPresentation(object);
-        if (object.visual && object.visual.voxels && presentation === "floor")
-            return floorSpriteInstancesForObject(frame, cell, object, tween);
+    function instancesForObject(frame, cell, object, tween, options, solidVoxelOccupancy, cameraFacing) {
         if (object.visual && object.visual.voxels && options && options.voxelMesh)
-            return voxelFaceInstancesForObject(frame, cell, object, tween, solidVoxelOccupancy, options);
+            return voxelFaceInstancesForObject(frame, cell, object, tween, solidVoxelOccupancy, cameraFacing);
         if (object.visual && object.visual.voxels)
             return voxelInstancesForObject(frame, cell, object, tween);
-        return [instanceForObject(frame, cell, object, tween)];
-    }
-
-    function instanceForObject(frame, cell, object, tween) {
-        const presentation = objectPresentation(object);
-        const isSurface = presentation === "floor";
-        const transform = tweenTransformForObject(cell, object, tween);
-        const position = boardCellToScenePosition(frame, cell, transform.offset);
-        const y = position.y + (isSurface ? -0.46 : 0);
-        return {
-            x: position.x,
-            y,
-            z: position.z,
-            color: object.visual && object.visual.color || "#ff00ff",
-            alpha: visualAlpha(object.visual, transform.alpha),
-            renderOrder: renderOrderForObject(object),
-            scale: surfaceScaleForPresentation(presentation)
-        };
-    }
-
-    function surfaceScaleForPresentation(presentation) {
-        if (presentation === "floor")
-            return { x: 1, y: 0.08, z: 1 };
-        if (presentation === "solid")
-            return { x: 1, y: 1, z: 1 };
-        throw new Error(`3D renderer does not support visual presentation "${presentation}".`);
+        throw new Error(`3D renderer requires voxel visual data for object "${object && object.name || object && object.id}".`);
     }
 
     function visualAlpha(visual, transformAlpha, voxelAlpha) {
         const explicitAlpha = voxelAlpha == null ? visual && visual.alpha : voxelAlpha;
         return Number.isFinite(explicitAlpha) ? explicitAlpha * transformAlpha : transformAlpha;
-    }
-
-    function objectPresentation(object) {
-        const presentation = object && object.visual && object.visual.presentation;
-        if (presentation === "floor" || presentation === "solid")
-            return presentation;
-        throw new Error(`3D renderer requires explicit supported visual presentation for object "${object && object.name || object && object.id}".`);
     }
 
     function voxelInstancesForObject(frame, cell, object, tween) {
@@ -22936,13 +22880,13 @@ function isRulePrefixDirectionToken(state, token) {
         return items;
     }
 
-    function voxelFaceInstancesForObject(frame, cell, object, tween, solidVoxelOccupancy, options) {
+    function voxelFaceInstancesForObject(frame, cell, object, tween, solidVoxelOccupancy, cameraFacing) {
         const cells = worldVoxelCellsForObject(frame, cell, object, tween);
         const occupied = solidVoxelOccupancy || new Set(cells.map(voxel => voxel.worldKey));
         const items = [];
 
         for (const voxel of cells) {
-            const faces = exposedVoxelFaces(voxel, occupied, options && options.cameraPosition);
+            const faces = exposedVoxelFaces(voxel, occupied, cameraFacing);
             if (faces.length === 0)
                 continue;
             items.push({
@@ -22968,8 +22912,6 @@ function isRulePrefixDirectionToken(state, token) {
                         continue;
                     const object = objects[objectId];
                     if (!object || !object.visual || !object.visual.voxels)
-                        continue;
-                    if (objectPresentation(object) !== "solid")
                         continue;
                     for (const voxel of worldVoxelCellsForObject(frame, cell, object, tween)) {
                         if (voxel.color === "transparent")
@@ -23030,7 +22972,7 @@ function isRulePrefixDirectionToken(state, token) {
         return cells;
     }
 
-    function exposedVoxelFaces(voxel, occupied, cameraPosition) {
+    function exposedVoxelFaces(voxel, occupied, cameraFacing) {
         const half = voxel.step / 2;
         const x0 = voxel.center.x - half;
         const x1 = voxel.center.x + half;
@@ -23039,7 +22981,7 @@ function isRulePrefixDirectionToken(state, token) {
         const z0 = voxel.center.z - half;
         const z1 = voxel.center.z + half;
         const faces = [];
-        addExposedFace(faces, occupied, voxel, 1, 0, 0, { x: 1, y: 0, z: 0 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 1, 0, 0, { x: 1, y: 0, z: 0 }, cameraFacing, [
             { x: x1, y: y0, z: z0 },
             { x: x1, y: y1, z: z0 },
             { x: x1, y: y1, z: z1 },
@@ -23047,7 +22989,7 @@ function isRulePrefixDirectionToken(state, token) {
             { x: x1, y: y1, z: z1 },
             { x: x1, y: y0, z: z1 }
         ]);
-        addExposedFace(faces, occupied, voxel, -1, 0, 0, { x: -1, y: 0, z: 0 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, -1, 0, 0, { x: -1, y: 0, z: 0 }, cameraFacing, [
             { x: x0, y: y0, z: z1 },
             { x: x0, y: y1, z: z1 },
             { x: x0, y: y1, z: z0 },
@@ -23055,7 +22997,7 @@ function isRulePrefixDirectionToken(state, token) {
             { x: x0, y: y1, z: z0 },
             { x: x0, y: y0, z: z0 }
         ]);
-        addExposedFace(faces, occupied, voxel, 0, 1, 0, { x: 0, y: 1, z: 0 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 0, 1, 0, { x: 0, y: 1, z: 0 }, cameraFacing, [
             { x: x0, y: y1, z: z0 },
             { x: x0, y: y1, z: z1 },
             { x: x1, y: y1, z: z1 },
@@ -23063,7 +23005,7 @@ function isRulePrefixDirectionToken(state, token) {
             { x: x1, y: y1, z: z1 },
             { x: x1, y: y1, z: z0 }
         ]);
-        addExposedFace(faces, occupied, voxel, 0, -1, 0, { x: 0, y: -1, z: 0 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 0, -1, 0, { x: 0, y: -1, z: 0 }, cameraFacing, [
             { x: x0, y: y0, z: z1 },
             { x: x0, y: y0, z: z0 },
             { x: x1, y: y0, z: z0 },
@@ -23071,7 +23013,7 @@ function isRulePrefixDirectionToken(state, token) {
             { x: x1, y: y0, z: z0 },
             { x: x1, y: y0, z: z1 }
         ]);
-        addExposedFace(faces, occupied, voxel, 0, 0, 1, { x: 0, y: 0, z: 1 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 0, 0, 1, { x: 0, y: 0, z: 1 }, cameraFacing, [
             { x: x1, y: y0, z: z1 },
             { x: x1, y: y1, z: z1 },
             { x: x0, y: y1, z: z1 },
@@ -23079,7 +23021,7 @@ function isRulePrefixDirectionToken(state, token) {
             { x: x0, y: y1, z: z1 },
             { x: x0, y: y0, z: z1 }
         ]);
-        addExposedFace(faces, occupied, voxel, 0, 0, -1, { x: 0, y: 0, z: -1 }, cameraPosition, [
+        addExposedFace(faces, occupied, voxel, 0, 0, -1, { x: 0, y: 0, z: -1 }, cameraFacing, [
             { x: x0, y: y0, z: z0 },
             { x: x0, y: y1, z: z0 },
             { x: x1, y: y1, z: z0 },
@@ -23090,7 +23032,7 @@ function isRulePrefixDirectionToken(state, token) {
         return faces;
     }
 
-    function addExposedFace(faces, occupied, voxel, dx, dy, dz, normal, cameraPosition, vertices) {
+    function addExposedFace(faces, occupied, voxel, dx, dy, dz, normal, cameraFacing, vertices) {
         const neighborCenter = {
             x: voxel.center.x + dx * voxel.step,
             y: voxel.center.y + dy * voxel.step,
@@ -23098,13 +23040,28 @@ function isRulePrefixDirectionToken(state, token) {
         };
         if (occupied.has(worldVoxelKey(neighborCenter)))
             return;
-        if (cameraPosition && !faceFacesCamera(normal, vertices, cameraPosition))
+        if (cameraFacing && !faceFacesCamera(normal, vertices, cameraFacing))
             return;
         faces.push({ normal, vertices });
     }
 
-    function faceFacesCamera(normal, vertices, cameraPosition) {
+    function cameraFacingFromOptions(options) {
+        if (!options)
+            return null;
+        const projection = options.cameraProjection || "perspective";
+        if (projection === "orthographic")
+            return null;
+        if (!options.cameraPosition)
+            return null;
+        return {
+            projection,
+            position: vectorFromThree(options.cameraPosition)
+        };
+    }
+
+    function faceFacesCamera(normal, vertices, cameraFacing) {
         const center = faceCenter(vertices);
+        const cameraPosition = cameraFacing.position;
         const toCamera = {
             x: cameraPosition.x - center.x,
             y: cameraPosition.y - center.y,
@@ -23136,35 +23093,6 @@ function isRulePrefixDirectionToken(state, token) {
 
     function quantizedCoord(value) {
         return Math.round(value * 1000000);
-    }
-
-    function floorSpriteInstancesForObject(frame, cell, object, tween) {
-        const voxels = object.visual.voxels;
-        const size = voxels.size || {};
-        const width = Math.max(1, size.width || size.x || 1);
-        const depth = Math.max(1, size.depth || size.z || 1);
-        const span = object.visual.span || 1;
-        const stepX = span / width;
-        const stepZ = span / depth;
-        const transform = tweenTransformForObject(cell, object, tween);
-        const position = boardCellToScenePosition(frame, cell, transform.offset);
-        const items = [];
-
-        for (const voxel of voxels.cells || []) {
-            const vx = voxel.x == null ? voxel.col : voxel.x;
-            const vz = voxel.z == null ? voxel.row : voxel.z;
-            items.push({
-                x: position.x - span / 2 + (vx + 0.5) * stepX,
-                y: position.y - 0.46,
-                z: position.z - span / 2 + (vz + 0.5) * stepZ,
-                color: voxel.color || object.visual.color || "#ff00ff",
-                alpha: visualAlpha(object.visual, transform.alpha, voxel.alpha),
-                renderOrder: renderOrderForObject(object),
-                scale: { x: stepX, y: 0.08, z: stepZ }
-            });
-        }
-
-        return items;
     }
 
     function mergeVoxelRuns(voxels, options) {
@@ -24216,6 +24144,7 @@ __PuzzleScriptNextThreeRoot.THREE = {
         const state = compiledState || root.puzzle3DCompiledState || root.state;
         root.textMode = false;
         root.titleScreen = false;
+        root.messagetext = "";
         root.levelEditorOpened = false;
         root.oldflickscreendat = [];
         root.puzzle3DScreenCamera = null;
@@ -24674,7 +24603,26 @@ __PuzzleScriptNextThreeRoot.THREE = {
     }
 
     function clearBrowserAgain() {
-        root.againing = false;
+        syncBrowserLoopBinding("againing", false);
+    }
+
+    function syncBrowserLoopBinding(name, value) {
+        root[name] = value;
+        if (!root || typeof root.eval !== "function")
+            return;
+        const holder = "__puzzle3DBrowserLoopBindingValue";
+        try {
+            root[holder] = value;
+            root.eval(name + " = globalThis." + holder + ";");
+        } catch (err) {
+            // Some host tests and shells do not expose every browser binding.
+        } finally {
+            try {
+                delete root[holder];
+            } catch (err) {
+                root[holder] = undefined;
+            }
+        }
     }
 
     function syncBrowserLoopBindings() {
@@ -24701,11 +24649,9 @@ __PuzzleScriptNextThreeRoot.THREE = {
         ];
         for (let i = 0; i < bindings.length; i++) {
             const name = bindings[i];
-            try {
-                root.eval(name + " = globalThis." + name + ";");
-            } catch (err) {
-                // Some host tests and shells do not expose every browser binding.
-            }
+            if (!Object.prototype.hasOwnProperty.call(root, name))
+                continue;
+            syncBrowserLoopBinding(name, root[name]);
         }
     }
 
@@ -24874,6 +24820,7 @@ __PuzzleScriptNextThreeRoot.THREE = {
             return false;
         if (command !== "undo" && command !== "restart")
             return false;
+        clearBrowserAgain();
 
         const artifacts = {
             queue: [command],
@@ -29961,6 +29908,7 @@ const Compiler3DOverlay = {
     getObjectRefs,
     getObjectUndefs,
     createObjectRef,
+    isColor,
     colorToHex,
     isSitelocked,
     loadFile,
@@ -30006,6 +29954,7 @@ var isDeclaredAs = Compiler3DOverlay.isDeclaredAs;
 var getObjectRefs = Compiler3DOverlay.getObjectRefs;
 var getObjectUndefs = Compiler3DOverlay.getObjectUndefs;
 var createObjectRef = Compiler3DOverlay.createObjectRef;
+var isColor = Compiler3DOverlay.isColor;
 var colorToHex = Compiler3DOverlay.colorToHex;
 var isSitelocked = Compiler3DOverlay.isSitelocked;
 var compile = Compiler3DOverlay.compile;
@@ -30026,6 +29975,7 @@ if (typeof globalThis !== "undefined") {
     globalThis.getObjectRefs = getObjectRefs;
     globalThis.getObjectUndefs = getObjectUndefs;
     globalThis.applyTransforms = applyTransforms;
+    globalThis.isColor = isColor;
     globalThis.colorToHex = colorToHex;
     globalThis.isSitelocked = isSitelocked;
 }
@@ -31567,6 +31517,7 @@ function update() {
     if (againing) {
         if (timer>againinterval && messagetext == "") {
         //if (timer>againinterval && messagetext == "" && !isTweening) {
+            againing = false;
             if (processBrowserPlayInput(-1)) {
                 draw = true;
                 keyRepeatTimer=0;

@@ -104,8 +104,11 @@ const ALLOWED_ORIGINAL_FILE_DRIFT = [
     "src/editor.html",
     "src/js/engine.js",
     "src/play.html",
-    "src/standalone.html",
     "src/standalone_inlined.txt"
+];
+
+const IGNORED_GENERATED_FILE_DRIFT = [
+    ".build/buildnumber.txt"
 ];
 
 function compiler2DPhase(phase, functionName, currentFunctionName) {
@@ -255,6 +258,7 @@ function testOriginalFileDriftIsAllowedBoundaryOnly() {
         .map(line => line.split(/\t+/))
         .filter(parts => parts[0] === "M" || parts[0] === "D")
         .map(parts => parts[1])
+        .filter(file => !IGNORED_GENERATED_FILE_DRIFT.includes(file))
         .sort();
 
     assert.deepStrictEqual(
@@ -266,6 +270,9 @@ function testOriginalFileDriftIsAllowedBoundaryOnly() {
             "",
             "Allowed original-file drift:",
             ...ALLOWED_ORIGINAL_FILE_DRIFT.map(file => `  ${file}`),
+            "",
+            "Ignored generated-file drift:",
+            ...IGNORED_GENERATED_FILE_DRIFT.map(file => `  ${file}`),
             "",
             "Actual modified/deleted original files:",
             ...modifiedOrDeletedOriginalFiles.map(file => `  ${file}`)

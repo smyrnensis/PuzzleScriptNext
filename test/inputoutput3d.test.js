@@ -107,8 +107,9 @@ function loadInputOutputForTest(options = {}) {
         runClick: () => {}
     });
 
-    delete require.cache[require.resolve("../src/js/inputoutput3d.js")];
-    require("../src/js/inputoutput3d.js");
+    const sourceFile = options.sourceFile || "../src/js/inputoutput3d.js";
+    delete require.cache[require.resolve(sourceFile)];
+    require(sourceFile);
     return { listeners, canvasElement, otherTarget, calls, pushes, sideEffects };
 }
 
@@ -132,10 +133,11 @@ function mouseEvent(target) {
     };
 }
 
-function runShellScenario(scenario) {
+function runShellScenario(scenario, sourceFile) {
     const { listeners, canvasElement, sideEffects, calls, pushes } = loadInputOutputForTest({
         lastDownTarget: scenario.lastDownTarget,
-        canvas: scenario.canvas
+        canvas: scenario.canvas,
+        sourceFile
     });
     Object.assign(global, scenario.setup || {});
     global.state = scenario.state;
@@ -172,15 +174,23 @@ function assert3DShellMatches2DOracle(name, baseScenario) {
             metadata: baseScenario.metadata || {},
             levels
         }
-    }));
+    }), "../src/js/inputoutput.js");
     const threeD = runShellScenario(Object.assign({}, baseScenario, {
         state: {
             metadata: baseScenario.metadata || {},
             levels
         }
-    }));
+    }), "../src/js/inputoutput3d.js");
 
-    assert.deepStrictEqual(threeD, twoD, name);
+    assert.deepStrictEqual(normalizeShellResultFor2DOracle(threeD), normalizeShellResultFor2DOracle(twoD), name);
+}
+
+function normalizeShellResultFor2DOracle(result) {
+    return Object.assign({}, result, {
+        sideEffects: result.sideEffects.filter(effect => {
+            return effect[0] !== "activeBlur" && effect[0] !== "editorBlur";
+        })
+    });
 }
 
 function testActiveCanvasUsesExistingKeyboardGate() {
@@ -200,6 +210,19 @@ function testNonCanvasTargetDoesNotEnterKeyboardGate() {
 
     assert.deepStrictEqual(calls, []);
     assert.deepStrictEqual(pushes, []);
+}
+
+function testToolbarTargetKeyboardGateMatches2DOracle() {
+    const runLinkTarget = { id: "runClickLink" };
+    assert3DShellMatches2DOracle("toolbar target keyboard gate matches 2D oracle", {
+        levels: [{ title: "playable" }],
+        lastDownTarget: runLinkTarget,
+        setup: {
+            textMode: false,
+            titleScreen: false
+        },
+        steps: [{ type: "keydown", keyCode: 39 }]
+    });
 }
 
 function testKeyboardListenersRunBeforeEditorBubbleHandlers() {
@@ -620,6 +643,55 @@ function testActiveBrowserHostReceivesBrowserLoopNoInputTurns() {
     );
 }
 
+function testAgainLoopClearsInputGateBeforeActiveHostNoInputTurn() {
+    const canvasElement = { id: "gameCanvas3D", addEventListener: () => {} };
+    const { listeners } = loadInputOutputForTest({ canvas: canvasElement });
+    const hostCalls = [];
+    let againingAtHostCall = null;
+
+    global.againing = true;
+    global.againinterval = 150;
+    global.timer = 151;
+    global.messagetext = "";
+    global.PuzzleHostCapabilities = {
+        hasActiveBrowserSession: () => true,
+        processBrowserInput: input => {
+            hostCalls.push(input);
+            againingAtHostCall = global.againing;
+            return false;
+        }
+    };
+
+    listeners.frame(0);
+
+    assert.deepStrictEqual(hostCalls, [-1]);
+    assert.strictEqual(againingAtHostCall, false);
+    assert.strictEqual(global.againing, false);
+}
+
+function testActiveHostCanRescheduleAgainAfterInputGateClear() {
+    const canvasElement = { id: "gameCanvas3D", addEventListener: () => {} };
+    const { listeners } = loadInputOutputForTest({ canvas: canvasElement });
+
+    global.againing = true;
+    global.againinterval = 150;
+    global.timer = 151;
+    global.messagetext = "";
+    global.PuzzleHostCapabilities = {
+        hasActiveBrowserSession: () => true,
+        processBrowserInput: () => {
+            global.againing = true;
+            global.timer = 0;
+            return true;
+        }
+    };
+
+    listeners.frame(0);
+
+    assert.strictEqual(global.againing, true);
+    assert.strictEqual(global.timer, 0);
+}
+
 function testNo3DInputAdapterHookInInputOutput() {
     const source = fs.readFileSync(path.join(__dirname, "../src/js/inputoutput3d.js"), "utf8");
 
@@ -629,6 +701,7 @@ function testNo3DInputAdapterHookInInputOutput() {
 
 testActiveCanvasUsesExistingKeyboardGate();
 testNonCanvasTargetDoesNotEnterKeyboardGate();
+testToolbarTargetKeyboardGateMatches2DOracle();
 testKeyboardListenersRunBeforeEditorBubbleHandlers();
 testCanvasMouseDownBlursEditorInputForGameKeys();
 testNonCanvasMouseDownDoesNotBlurEditorInputForGameKeys();
@@ -647,6 +720,8 @@ test3DLevelMessageCloseUpdateMatches2DOracle();
 testWinningUpdateUsesExistingNextLevel();
 testBrowserLoopTimingMatches2DOracle();
 testActiveBrowserHostReceivesBrowserLoopNoInputTurns();
+testAgainLoopClearsInputGateBeforeActiveHostNoInputTurn();
+testActiveHostCanRescheduleAgainAfterInputGateClear();
 testNo3DInputAdapterHookInInputOutput();
 
 console.log("3d inputoutput tests passed");

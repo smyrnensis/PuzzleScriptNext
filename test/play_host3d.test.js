@@ -631,16 +631,25 @@ function testSessionCommandHelperDoesNotPatch2DGlobals() {
     const calls = [];
     const canvas2D = { id: "gameCanvas", style: {}, parentNode: { insertBefore: () => {} } };
     const canvas3D = { id: "gameCanvas3D", style: {} };
+    let lexicalAgaining = true;
     const hostWindow = {
         THREE: {},
         RNG: function RNG() {},
         canvas: canvas2D,
+        againing: true,
         document: {
             getElementById: id => id === "gameCanvas" ? canvas2D : null,
             createElement: tag => {
                 assert.strictEqual(tag, "canvas");
                 return canvas3D;
             }
+        },
+        eval(source) {
+            if (source === "againing = globalThis.__puzzle3DBrowserLoopBindingValue;") {
+                lexicalAgaining = hostWindow.__puzzle3DBrowserLoopBindingValue;
+                return lexicalAgaining;
+            }
+            throw new Error(`unexpected eval source: ${source}`);
         },
         processInput: () => false,
         DoUndo: function DoUndo2D() {
@@ -682,7 +691,13 @@ function testSessionCommandHelperDoesNotPatch2DGlobals() {
     calls.length = 0;
 
     assert.strictEqual(host.handleSessionCommand("undo"), true);
+    assert.strictEqual(hostWindow.againing, false);
+    assert.strictEqual(lexicalAgaining, false);
+    hostWindow.againing = true;
+    lexicalAgaining = true;
     assert.strictEqual(host.handleSessionCommand("restart"), true);
+    assert.strictEqual(hostWindow.againing, false);
+    assert.strictEqual(lexicalAgaining, false);
 
     assert.deepStrictEqual(calls, [
         ["applySessionArtifacts3D", session, { queue: ["undo"], undoRequested: true, restartRequested: false }, "undo", {}],
@@ -1083,6 +1098,7 @@ function testBrowserAgainSchedulingUses2DLoopState() {
     };
     const session = { runtime: {}, state: compiledState };
     const calls = [];
+    const lexicalBindings = {};
     const hostWindow = {
         THREE: {},
         RNG: function RNG() {},
@@ -1091,6 +1107,13 @@ function testBrowserAgainSchedulingUses2DLoopState() {
         processInput: () => false,
         againing: false,
         timer: 400,
+        eval(source) {
+            const match = source.match(/^([A-Za-z0-9_]+) = globalThis\.__puzzle3DBrowserLoopBindingValue;$/);
+            if (!match)
+                throw new Error(`unexpected eval source: ${source}`);
+            lexicalBindings[match[1]] = hostWindow.__puzzle3DBrowserLoopBindingValue;
+            return lexicalBindings[match[1]];
+        },
         GameRuntime3D: {
             createSessionFromState3D: () => session,
             processSessionTurn3D: (_session, direction, options) => {
@@ -1115,11 +1138,16 @@ function testBrowserAgainSchedulingUses2DLoopState() {
     const host = loadPlayHostWithWindow(hostWindow);
 
     assert.strictEqual(host.startPlayableLevel(compiledState, 0, { randomseed: null }), true);
+    assert.strictEqual(hostWindow.messagetext, "");
+    assert.strictEqual(lexicalBindings.messagetext, "");
     calls.length = 0;
 
     assert.strictEqual(host.processInput(3), true);
     assert.strictEqual(hostWindow.againing, true);
     assert.strictEqual(hostWindow.timer, 0);
+    assert.strictEqual(lexicalBindings.againing, true);
+    assert.strictEqual(lexicalBindings.timer, 0);
+    assert.strictEqual(lexicalBindings.messagetext, "");
     assert.deepStrictEqual(calls, [
         ["processTurn", "right", true, true],
         ["render", "turn-frame"]

@@ -4456,6 +4456,7 @@ const Compiler3DOverlay = {
     getObjectRefs,
     getObjectUndefs,
     createObjectRef,
+    isColor,
     colorToHex,
     isSitelocked,
     loadFile,
@@ -4501,6 +4502,7 @@ var isDeclaredAs = Compiler3DOverlay.isDeclaredAs;
 var getObjectRefs = Compiler3DOverlay.getObjectRefs;
 var getObjectUndefs = Compiler3DOverlay.getObjectUndefs;
 var createObjectRef = Compiler3DOverlay.createObjectRef;
+var isColor = Compiler3DOverlay.isColor;
 var colorToHex = Compiler3DOverlay.colorToHex;
 var isSitelocked = Compiler3DOverlay.isSitelocked;
 var compile = Compiler3DOverlay.compile;
@@ -4521,6 +4523,7 @@ if (typeof globalThis !== "undefined") {
     globalThis.getObjectRefs = getObjectRefs;
     globalThis.getObjectUndefs = getObjectUndefs;
     globalThis.applyTransforms = applyTransforms;
+    globalThis.isColor = isColor;
     globalThis.colorToHex = colorToHex;
     globalThis.isSitelocked = isSitelocked;
 }
