@@ -182,8 +182,8 @@ function testReleaseBuildKeeps2DAnd3DBundlesSeparate() {
         assert(section.includes("parser3d.js"));
         assert(section.includes("compiler3d.js"));
     }
-    assert(source.includes('editor3d = editor3d.replace(/<!--___SCRIPTINSERT___-->/g, \'<script src="js\\/scripts3d_compiled.js"><\\/script>\');'));
-    assert(source.includes('player3d = player3d.replace(/<!--___SCRIPTINSERT___-->/g, \'<script src="js\\/scripts3d_play_compiled.js"><\\/script>\');'));
+    assert(source.includes('editor3d = editor3d.replace(/<!--___SCRIPTINSERT___-->/g, `<script src="js\\/scripts3d_compiled.js?build=${buildnum}"><\\/script>`);'));
+    assert(source.includes('player3d = player3d.replace(/<!--___SCRIPTINSERT___-->/g, `<script src="js\\/scripts3d_play_compiled.js?build=${buildnum}"><\\/script>`);'));
 }
 
 function testCompilerOverlayPreservesClassicBrowserHelperContract() {

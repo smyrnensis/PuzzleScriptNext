@@ -404,7 +404,7 @@ ncp("./src", "./bin/", function (err) {
 
             var editor = fs.readFileSync("./bin/editor.html", encoding = 'utf8');
             editor = editor.replace(/<script src="js\/[A-Za-z0-9_\/-]*\.js"><\/script>/g, "");
-            editor = editor.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts_compiled.js"><\/script>');
+            editor = editor.replace(/<!--___SCRIPTINSERT___-->/g, `<script src="js\/scripts_compiled.js?build=${buildnum}"><\/script>`);
             editor = editor.replace(/<link rel="stylesheet" href="[A-Za-z0-9_\/-]*\.css">/g, '');
             editor = editor.replace(/<!--CSSREPLACE-->/g, '<link rel="stylesheet" href="css\/combined.css">');
             d = new Date();
@@ -414,7 +414,7 @@ ncp("./src", "./bin/", function (err) {
 
             var editor3d = fs.readFileSync("./bin/editor3d.html", encoding = 'utf8');
             editor3d = editor3d.replace(/<script src="js\/[A-Za-z0-9_\/-]*\.js"><\/script>/g, "");
-            editor3d = editor3d.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts3d_compiled.js"><\/script>');
+            editor3d = editor3d.replace(/<!--___SCRIPTINSERT___-->/g, `<script src="js\/scripts3d_compiled.js?build=${buildnum}"><\/script>`);
             editor3d = editor3d.replace(/<link rel="stylesheet" href="[A-Za-z0-9_\/-]*\.css">/g, '');
             editor3d = editor3d.replace(/<!--CSSREPLACE-->/g, '<link rel="stylesheet" href="css\/combined.css">');
             editor3d = editor3d.replace(/<!--BUILDNUMBER-->/g, `build ${buildnum.toString()}, ${d.getDate()}-${monthname[d.getMonth()]}-${d.getFullYear()}`);
@@ -422,12 +422,12 @@ ncp("./src", "./bin/", function (err) {
 
             var player = fs.readFileSync("./bin/play.html", encoding = 'utf8');
             player = player.replace(/<script src="js\/[A-Za-z0-9_\/-]*\.js"><\/script>/g, "");
-            player = player.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts_play_compiled.js"><\/script>');
+            player = player.replace(/<!--___SCRIPTINSERT___-->/g, `<script src="js\/scripts_play_compiled.js?build=${buildnum}"><\/script>`);
             fs.writeFileSync("./bin/play.html", player, encoding = 'utf8');
 
             var player3d = fs.readFileSync("./bin/play3d.html", encoding = 'utf8');
             player3d = player3d.replace(/<script src="js\/[A-Za-z0-9_\/-]*\.js"><\/script>/g, "");
-            player3d = player3d.replace(/<!--___SCRIPTINSERT___-->/g, '<script src="js\/scripts3d_play_compiled.js"><\/script>');
+            player3d = player3d.replace(/<!--___SCRIPTINSERT___-->/g, `<script src="js\/scripts3d_play_compiled.js?build=${buildnum}"><\/script>`);
             fs.writeFileSync("./bin/play3d.html", player3d, encoding = 'utf8');
 
             console.log("inlining standalone template")
